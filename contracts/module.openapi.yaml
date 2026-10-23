@@ -1,0 +1,45 @@
+openapi: 3.1.0
+info:
+  title: StuHelper internal module handshake
+  version: 0.1.0
+  description: Minimal operational metadata; no identity, provider or payment payloads.
+paths:
+  /internal/v1/module:
+    get:
+      operationId: getModuleDescriptor
+      security:
+        - serviceCredential: []
+      responses:
+        '200':
+          description: Installed module descriptor
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModuleDescriptor'
+        '401':
+          description: Missing or invalid service credential
+        '503':
+          description: Service unavailable
+components:
+  securitySchemes:
+    serviceCredential:
+      type: http
+      scheme: bearer
+  schemas:
+    ModuleDescriptor:
+      type: object
+      required: [id, version, api, capabilities]
+      properties:
+        id:
+          type: string
+          pattern: '^[a-z][a-z0-9-]*$'
+        version:
+          type: string
+          minLength: 1
+        api:
+          type: integer
+          minimum: 1
+        capabilities:
+          type: array
+          items:
+            type: string

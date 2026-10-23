@@ -1,0 +1,7 @@
+# actionlint 1.7.12 predates this GitHub-hosted label.
+# Official label: https://github.com/actions/runner-images#available-images
+# This extends lint validation only; it does not select self-hosted execution.
+# Remove this entry once actionlint recognizes ubuntu-26.04 natively.
+self-hosted-runner:
+  labels:
+    - ubuntu-26.04
