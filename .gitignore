@@ -1,0 +1,9 @@
+node_modules/
+dist/
+bin/
+.env
+.env.*
+!.env.example
+coverage/
+test-results/
+playwright-report/
