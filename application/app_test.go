@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net"
 	"net/http"
 	"testing"
@@ -51,7 +52,10 @@ func TestPublicFrameworkAndUnavailableIdentity(t *testing.T) {
 			t.Error(err)
 		}
 	})
-	client := http.Client{Timeout: time.Second}
+	transport := &http.Transport{}
+	client := http.Client{Timeout: time.Second, Transport: transport}
+	// Close test-owned keep-alive/speculative connections before stopping the server.
+	t.Cleanup(client.CloseIdleConnections)
 	for _, path := range []string{"/healthz", "/readyz", "/api/v1/system/capabilities"} {
 		response, err := client.Get("http://" + address + path)
 		if err != nil {
@@ -69,6 +73,7 @@ func TestPublicFrameworkAndUnavailableIdentity(t *testing.T) {
 				t.Fatal(body)
 			}
 		}
+		_, _ = io.Copy(io.Discard, response.Body)
 		_ = response.Body.Close()
 	}
 	response, err := client.Get("http://" + address + "/api/v1/admin/modules")
@@ -83,4 +88,5 @@ func TestPublicFrameworkAndUnavailableIdentity(t *testing.T) {
 	if response.StatusCode != 503 || problem.Code != "identity_unavailable" || problem.RequestId == "" {
 		t.Fatal(response.StatusCode, problem)
 	}
+	_, _ = io.Copy(io.Discard, response.Body)
 }
