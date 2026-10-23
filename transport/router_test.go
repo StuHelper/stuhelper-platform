@@ -2,6 +2,7 @@ package transport
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -17,6 +18,52 @@ type authenticator struct{ err error }
 
 func (a authenticator) Authenticate(*http.Request) (Principal, error) {
 	return Principal{Issuer: "test-issuer", Subject: "synthetic-user"}, a.err
+}
+
+func TestPanicAfterResponseStartsAbortsHTTPStream(t *testing.T) {
+	for _, http2 := range []bool{false, true} {
+		for _, mode := range []string{"header", "body", "flush", "copy"} {
+			t.Run(fmt.Sprintf("http2=%v/%s", http2, mode), func(t *testing.T) {
+				var logs strings.Builder
+				route := Route{Method: "GET", Path: "/api/v1/example", Module: "example", Capability: "example.read", Access: Public, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					switch mode {
+					case "header":
+						w.WriteHeader(200)
+					case "body":
+						_, _ = w.Write([]byte("partial"))
+					case "flush":
+						w.(http.Flusher).Flush()
+					case "copy":
+						_, _ = io.Copy(w, struct{ io.Reader }{strings.NewReader("partial")})
+					}
+					panic("private fixture detail")
+				})}
+				h, err := NewHandler(registry(t, true), []Route{route}, nil, nil, slog.New(slog.NewJSONHandler(&logs, nil)))
+				if err != nil {
+					t.Fatal(err)
+				}
+				server := httptest.NewUnstartedServer(h)
+				server.EnableHTTP2 = http2
+				server.StartTLS()
+				defer server.Close()
+				client := server.Client()
+				defer client.CloseIdleConnections()
+				response, requestErr := client.Get(server.URL + "/api/v1/example")
+				var body []byte
+				var readErr error
+				if requestErr == nil {
+					body, readErr = io.ReadAll(response.Body)
+					response.Body.Close()
+				}
+				if requestErr == nil && readErr == nil {
+					t.Fatalf("panic returned a complete response: %s", body)
+				}
+				if strings.Contains(string(body)+logs.String(), "private fixture detail") || strings.Contains(string(body), "internal_error") {
+					t.Fatal("panic leaked or appended error payload")
+				}
+			})
+		}
+	}
 }
 
 type authorizer struct{ err error }

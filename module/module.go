@@ -177,6 +177,19 @@ func (r *Registry) setState(id string, state State) {
 }
 
 func (r *Registry) Available(ctx context.Context, id string) bool {
+	return r.available(ctx, id, make(map[string]bool))
+}
+
+// Results live only for this evaluation, so shared dependencies are probed once
+// without hiding an outage or recovery from the next request.
+func (r *Registry) available(ctx context.Context, id string, results map[string]bool) (available bool) {
+	if ctx.Err() != nil {
+		return false
+	}
+	if result, checked := results[id]; checked {
+		return result
+	}
+	defer func() { results[id] = available }()
 	r.mu.RLock()
 	d, installed := r.definitions[id]
 	state := r.states[id]
@@ -188,16 +201,17 @@ func (r *Registry) Available(ctx context.Context, id string) bool {
 		return false
 	}
 	for _, dep := range d.Descriptor.Requires {
-		if !r.Available(ctx, dep.ID) {
+		if !r.available(ctx, dep.ID, results) {
 			return false
 		}
 	}
-	return true
+	return ctx.Err() == nil
 }
 
 func (r *Registry) Healthy(ctx context.Context) bool {
+	results := make(map[string]bool)
 	for _, id := range r.order {
-		if !r.Available(ctx, id) {
+		if !r.available(ctx, id, results) {
 			return false
 		}
 	}
@@ -206,8 +220,9 @@ func (r *Registry) Healthy(ctx context.Context) bool {
 
 func (r *Registry) Capabilities(ctx context.Context) []string {
 	result := []string{}
+	results := make(map[string]bool)
 	for _, id := range r.order {
-		if r.Available(ctx, id) {
+		if r.available(ctx, id, results) {
 			result = append(result, r.definitions[id].Descriptor.Capabilities...)
 		}
 	}

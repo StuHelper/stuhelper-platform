@@ -2,7 +2,10 @@ module github.com/StuHelper/stuhelper-platform
 
 go 1.27.2
 
-require go.uber.org/fx v1.24.0
+require (
+	github.com/felixge/httpsnoop v1.0.4
+	go.uber.org/fx v1.24.0
+)
 
 require (
 	go.uber.org/dig v1.19.0 // indirect

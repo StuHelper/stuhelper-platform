@@ -8,10 +8,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/felixge/httpsnoop"
 
 	"github.com/StuHelper/stuhelper-platform/internal/api/gen"
 	"github.com/StuHelper/stuhelper-platform/module"
@@ -148,6 +151,26 @@ func NewHandler(registry *module.Registry, routes []Route, authn Authenticator, 
 		JSON(w, 200, gen.Health{Status: gen.HealthStatusReady})
 	})
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		started := false
+		w = httpsnoop.Wrap(w, httpsnoop.Hooks{
+			WriteHeader: func(next httpsnoop.WriteHeaderFunc) httpsnoop.WriteHeaderFunc {
+				return func(code int) {
+					if code >= 200 || code == http.StatusSwitchingProtocols {
+						started = true
+					}
+					next(code)
+				}
+			},
+			Write: func(next httpsnoop.WriteFunc) httpsnoop.WriteFunc {
+				return func(body []byte) (int, error) { started = true; return next(body) }
+			},
+			Flush: func(next httpsnoop.FlushFunc) httpsnoop.FlushFunc {
+				return func() { started = true; next() }
+			},
+			ReadFrom: func(next httpsnoop.ReadFromFunc) httpsnoop.ReadFromFunc {
+				return func(source io.Reader) (int64, error) { started = true; return next(source) }
+			},
+		})
 		var raw [16]byte
 		if _, err := rand.Read(raw[:]); err != nil {
 			http.Error(w, "request unavailable", 503)
@@ -158,8 +181,14 @@ func NewHandler(registry *module.Registry, routes []Route, authn Authenticator, 
 		w.Header().Set("X-Request-ID", id)
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		defer func() {
-			if recover() != nil {
+			if recovered := recover(); recovered != nil {
+				if recovered == http.ErrAbortHandler {
+					panic(http.ErrAbortHandler)
+				}
 				logger.Error("request handler panic", "request_id", id)
+				if started {
+					panic(http.ErrAbortHandler)
+				}
 				problem(w, r, 500, "internal_error")
 			}
 		}()

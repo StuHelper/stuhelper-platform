@@ -3,6 +3,7 @@ package module
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"reflect"
 	"sync"
@@ -176,5 +177,62 @@ func TestStartRespectsCancellation(t *testing.T) {
 	defer cancel()
 	if lifecycle(t, r).Start(ctx) == nil {
 		t.Fatal("timeout ignored")
+	}
+}
+
+func TestReadinessProbesOncePerEvaluation(t *testing.T) {
+	const count = 20
+	definitions := make([]Definition, 0, count)
+	ids := make([]string, 0, count)
+	probes := make([]int, count)
+	available := true
+	for i := range count {
+		id := fmt.Sprintf("module-%c", 'a'+i)
+		var deps []Dependency
+		for _, previous := range ids {
+			deps = append(deps, Dependency{ID: previous, API: 1})
+		}
+		d := definition(id, deps...)
+		d.Ready = func(context.Context) error {
+			probes[i]++
+			if i == 0 && !available {
+				return io.EOF
+			}
+			return nil
+		}
+		definitions = append(definitions, d)
+		ids = append(ids, id)
+	}
+	r, err := New(definitions, ids)
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := lifecycle(t, r)
+	if err := app.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer app.Stop(context.Background())
+	for _, evaluate := range []func() bool{
+		func() bool { return r.Available(context.Background(), ids[count-1]) },
+		func() bool { return r.Healthy(context.Background()) },
+		func() bool { return len(r.Capabilities(context.Background())) == count },
+	} {
+		clear(probes)
+		if !evaluate() {
+			t.Fatal("healthy composition rejected")
+		}
+		for i, calls := range probes {
+			if calls != 1 {
+				t.Fatalf("module %d probed %d times in one evaluation", i, calls)
+			}
+		}
+	}
+	available = false
+	if got := r.Capabilities(context.Background()); len(got) != 0 {
+		t.Fatalf("stale readiness cache: %v", got)
+	}
+	available = true
+	if !r.Healthy(context.Background()) {
+		t.Fatal("recovery not observed")
 	}
 }
