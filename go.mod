@@ -3,7 +3,7 @@ module github.com/StuHelper/stuhelper-platform
 go 1.27.3
 
 require (
-	github.com/felixge/httpsnoop v1.0.4
+	github.com/felixge/httpsnoop v1.1.0
 	go.uber.org/fx v1.24.0
 )
 
