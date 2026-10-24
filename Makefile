@@ -4,6 +4,7 @@ export GOWORK
 .PHONY: check test build run generate check-generated
 
 check: check-generated
+	pnpm exec stuhelper-check release
 	python3 scripts/check_contracts.py
 	python3 scripts/check_boundaries.py
 	python3 -m unittest discover -s scripts -p 'test_*.py'

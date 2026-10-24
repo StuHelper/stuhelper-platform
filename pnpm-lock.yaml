@@ -12,8 +12,8 @@ importers:
   .:
     devDependencies:
       '@stuhelper/engineering-tools':
-        specifier: git+https://github.com/StuHelper/stuhelper-next.git#360f0e9c02738117d1aa8cdac090cf0bae11f217
-        version: https://codeload.github.com/StuHelper/stuhelper-next/tar.gz/360f0e9c02738117d1aa8cdac090cf0bae11f217
+        specifier: git+https://github.com/StuHelper/stuhelper-next.git#tooling-v0.1.2
+        version: https://codeload.github.com/StuHelper/stuhelper-next/tar.gz/240fd6e2dedad40aac8f211f6097dfef681c6cfa
       openapi-typescript:
         specifier: 7.13.0
         version: 7.13.0(typescript@5.9.3)
@@ -41,9 +41,9 @@ packages:
     resolution: {integrity: sha512-dEyx4uHh6Pc6ZkdU9Xe8rA4h12Odq6QKU/fqseBn07xwVwskhHiF3KHhqmw5BR+jAiFTvKTmwCafFql/k1pSzA==}
     engines: {node: '>=18.17.0', npm: '>=9.5.0'}
 
-  '@stuhelper/engineering-tools@https://codeload.github.com/StuHelper/stuhelper-next/tar.gz/360f0e9c02738117d1aa8cdac090cf0bae11f217':
-    resolution: {gitHosted: true, integrity: sha512-005PHeqvCf6oBbtwlPOSLBfzPJ9SGT5Epd6BpcsF+pC+LhoQkdS/5ssDqpVF7zbX173pSMsi0JDqHrEKIPgaiQ==, tarball: https://codeload.github.com/StuHelper/stuhelper-next/tar.gz/360f0e9c02738117d1aa8cdac090cf0bae11f217}
-    version: 0.1.0
+  '@stuhelper/engineering-tools@https://codeload.github.com/StuHelper/stuhelper-next/tar.gz/240fd6e2dedad40aac8f211f6097dfef681c6cfa':
+    resolution: {gitHosted: true, integrity: sha512-uzYPkw4TVY+kiwbNvx+Alyq7Ramh3Jwx7Lgs8m4YBH9bMk5T4w14vlxN+xDlJAeMYIr/wEm6t5ulJgRl0GQISw==, tarball: https://codeload.github.com/StuHelper/stuhelper-next/tar.gz/240fd6e2dedad40aac8f211f6097dfef681c6cfa}
+    version: 0.1.2
     engines: {node: 24.22.1, pnpm: 10.33.4}
     hasBin: true
 
@@ -380,7 +380,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@stuhelper/engineering-tools@https://codeload.github.com/StuHelper/stuhelper-next/tar.gz/360f0e9c02738117d1aa8cdac090cf0bae11f217':
+  '@stuhelper/engineering-tools@https://codeload.github.com/StuHelper/stuhelper-next/tar.gz/240fd6e2dedad40aac8f211f6097dfef681c6cfa':
     dependencies:
       github-slugger: 2.0.0
       markdown-it: 15.0.3

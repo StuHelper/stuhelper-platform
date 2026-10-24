@@ -5,6 +5,25 @@ on:
   push:
     branches: [ develop, main ]
   workflow_dispatch:
+    inputs:
+      combination:
+        description: Integration source selection
+        type: choice
+        options:
+          - latest
+          - fixed
+        default: latest
+        required: true
+      candidates:
+        description: Optional paired candidates as a JSON object
+        type: string
+        default: "{}"
+        required: false
+      replay:
+        description: Exact integration record copied from a previous summary
+        type: string
+        default: ""
+        required: false
 permissions:
   contents: read
 concurrency:
@@ -41,3 +60,20 @@ jobs:
           GOWORK: off
           CONTRACT_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before || github.sha }}
         run: make check
+      - name: Read paired integration candidates
+        id: candidates
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: pnpm exec stuhelper-check integration-inputs
+    outputs:
+      candidates: ${{ steps.candidates.outputs.candidates }}
+  integration:
+    name: Cross-repository checks
+    needs: framework
+    uses: StuHelper/stuhelper-next/.github/workflows/integration.yml@tooling-v0.1.2
+    with:
+      source: ${{ inputs.combination || 'latest' }}
+      candidate_repository: ${{ github.repository }}
+      candidate_revision: ${{ github.sha }}
+      candidates: ${{ inputs.candidates || needs.framework.outputs.candidates || '{}' }}
+      replay: ${{ inputs.replay || '' }}
