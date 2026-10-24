@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: StuHelper internal module handshake
-  version: 0.1.0
+  version: 0.2.0
   description: Minimal operational metadata; no identity, provider or payment payloads.
 paths:
   /internal/v1/module:
@@ -43,3 +43,26 @@ components:
           type: array
           items:
             type: string
+        requires:
+          type: array
+          items:
+            $ref: '#/components/schemas/Dependency'
+        optional:
+          type: array
+          items:
+            $ref: '#/components/schemas/Dependency'
+        capability_requires:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              $ref: '#/components/schemas/Dependency'
+    Dependency:
+      type: object
+      required: [id, api]
+      properties:
+        id:
+          type: string
+        api:
+          type: integer
+          minimum: 1

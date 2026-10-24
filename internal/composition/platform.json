@@ -1,0 +1,15 @@
+{
+  "critical": true,
+  "descriptor": {
+    "id": "platform",
+    "version": "development",
+    "api": 1,
+    "requires": [],
+    "optional": [],
+    "capabilities": [
+      "platform.status",
+      "platform.modules"
+    ],
+    "capability_requires": {}
+  }
+}

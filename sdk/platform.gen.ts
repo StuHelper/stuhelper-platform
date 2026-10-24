@@ -85,6 +85,11 @@ export interface components {
             id: string;
             /** @enum {string} */
             state: "disabled" | "starting" | "ready" | "stopping" | "stopped" | "failed";
+            /**
+             * @description Current core health, independent of lifecycle state.
+             * @enum {string}
+             */
+            health?: "available" | "unavailable" | "disabled";
         };
         Problem: {
             code: string;
@@ -138,7 +143,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Enabled modules and required dependencies are ready */
+            /** @description Critical modules and their core dependencies are ready */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -180,7 +185,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Module lifecycle state for an authorized administrator */
+            /** @description Module lifecycle and health for an authorized administrator */
             200: {
                 headers: {
                     [name: string]: unknown;

@@ -36,6 +36,27 @@ func (e HealthStatus) Valid() bool {
 	}
 }
 
+// Defines values for ModuleStatusHealth.
+const (
+	ModuleStatusHealthAvailable   ModuleStatusHealth = "available"
+	ModuleStatusHealthDisabled    ModuleStatusHealth = "disabled"
+	ModuleStatusHealthUnavailable ModuleStatusHealth = "unavailable"
+)
+
+// Valid indicates whether the value is a known member of the ModuleStatusHealth enum.
+func (e ModuleStatusHealth) Valid() bool {
+	switch e {
+	case ModuleStatusHealthAvailable:
+		return true
+	case ModuleStatusHealthDisabled:
+		return true
+	case ModuleStatusHealthUnavailable:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ModuleStatusState.
 const (
 	ModuleStatusStateDisabled ModuleStatusState = "disabled"
@@ -85,9 +106,14 @@ type HealthStatus string
 
 // ModuleStatus defines model for ModuleStatus.
 type ModuleStatus struct {
-	Id    string            `json:"id"`
-	State ModuleStatusState `json:"state"`
+	// Health Current core health, independent of lifecycle state.
+	Health *ModuleStatusHealth `json:"health,omitempty"`
+	Id     string              `json:"id"`
+	State  ModuleStatusState   `json:"state"`
 }
+
+// ModuleStatusHealth Current core health, independent of lifecycle state.
+type ModuleStatusHealth string
 
 // ModuleStatusState defines model for ModuleStatus.State.
 type ModuleStatusState string

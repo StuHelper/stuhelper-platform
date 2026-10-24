@@ -7,6 +7,7 @@ import (
 	"io"
 	"reflect"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -234,5 +235,73 @@ func TestReadinessProbesOncePerEvaluation(t *testing.T) {
 	available = true
 	if !r.Healthy(context.Background()) {
 		t.Fatal("recovery not observed")
+	}
+}
+
+// MOD-01: optional services gate individual capabilities, leaving core reads available.
+func TestOptionalCapabilitiesAndCriticalReadiness(t *testing.T) {
+	for _, installed := range []bool{false, true} {
+		t.Run(fmt.Sprint(installed), func(t *testing.T) {
+			reviews := definition("reviews")
+			reviews.Critical = true
+			reviews.Descriptor.Capabilities = []string{"reviews.read", "reviews.publish"}
+			dep := Dependency{ID: "verification", API: 1}
+			reviews.Descriptor.Optional = []Dependency{dep}
+			reviews.Descriptor.CapabilityRequires = map[string][]Dependency{"reviews.publish": {dep}}
+			defs := []Definition{reviews}
+			enabled := []string{"reviews"}
+			var available atomic.Bool
+			if installed {
+				service := definition("verification")
+				service.Ready = func(context.Context) error {
+					if !available.Load() {
+						return ErrRemoteUnavailable
+					}
+					return nil
+				}
+				defs = append(defs, service)
+				enabled = append(enabled, "verification")
+			}
+			r, err := New(defs, enabled)
+			if err != nil {
+				t.Fatal(err)
+			}
+			app := lifecycle(t, r)
+			if err = app.Start(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			defer app.Stop(context.Background())
+			if !r.CapabilityAvailable(context.Background(), "reviews", "reviews.read") || r.CapabilityAvailable(context.Background(), "reviews", "reviews.publish") || !r.ReadyForTraffic(context.Background()) {
+				t.Fatal("optional outage blocked core service or admitted publish")
+			}
+			if installed {
+				for _, status := range r.Statuses() {
+					if status.ID == "verification" && (status.State != Ready || status.Health != "unavailable") {
+						t.Fatal(status)
+					}
+				}
+				available.Store(true)
+				if !r.CapabilityAvailable(context.Background(), "reviews", "reviews.publish") {
+					t.Fatal("recovered service not admitted")
+				}
+			}
+		})
+	}
+}
+
+func TestOptionalDependencyDeclarationValidation(t *testing.T) {
+	dep := Dependency{ID: "verification", API: 2}
+	reviews := definition("reviews")
+	reviews.Descriptor.Optional = []Dependency{dep}
+	if _, err := New([]Definition{reviews, definition("verification")}, []string{"reviews"}); err == nil {
+		t.Fatal("incompatible installed optional dependency accepted")
+	}
+	reviews.Descriptor.CapabilityRequires = map[string][]Dependency{"reviews.unknown": {dep}}
+	if _, err := New([]Definition{reviews}, []string{"reviews"}); err == nil {
+		t.Fatal("undeclared capability accepted")
+	}
+	reviews.Descriptor.CapabilityRequires = map[string][]Dependency{"reviews.read": {{ID: "other", API: 1}}}
+	if _, err := New([]Definition{reviews}, []string{"reviews"}); err == nil {
+		t.Fatal("undeclared capability dependency accepted")
 	}
 }
