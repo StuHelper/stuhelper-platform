@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/StuHelper/stuhelper-platform/internal/api/gen"
+	"github.com/StuHelper/stuhelper-platform/internal/composition"
 	"github.com/StuHelper/stuhelper-platform/module"
 	"github.com/StuHelper/stuhelper-platform/transport"
 	"go.uber.org/fx"
@@ -54,7 +55,11 @@ func New(config Config, modules Modules) (*fx.App, error) {
 	if !slices.Contains(config.Enabled, "platform") {
 		return nil, errors.New("platform must be enabled")
 	}
-	definitions := append([]module.Definition{{Critical: true, Descriptor: module.Descriptor{ID: "platform", Version: "development", API: 1, Capabilities: []string{"platform.status", "platform.modules"}}}}, modules.Definitions...)
+	platform, err := composition.Platform()
+	if err != nil {
+		return nil, err
+	}
+	definitions := append([]module.Definition{platform}, modules.Definitions...)
 	registry, err := module.New(definitions, config.Enabled)
 	if err != nil {
 		return nil, err

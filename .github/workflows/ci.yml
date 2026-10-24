@@ -1,9 +1,9 @@
 name: CI
 on:
   pull_request:
-    branches: [develop, main]
+    branches: [ develop, main ]
   push:
-    branches: [develop, main]
+    branches: [ develop, main ]
   workflow_dispatch:
 permissions:
   contents: read
@@ -20,18 +20,24 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
-      - uses: actions/setup-node@v7.1.0
+      - name: Set up Node.js
+        uses: actions/setup-node@v7.1.0
         with:
           node-version-file: .node-version
           package-manager-cache: false
-      - uses: actions/setup-go@v7.0.0
+      - name: Set up the declared pnpm version
+        uses: pnpm/action-setup@v6.1.0
         with:
-          go-version-file: go.mod
           cache: false
-      - name: Install locked contract tools
+      - name: Set up Go for pinned tools
+        uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: .go-version
+          cache: false
+      - name: Install locked tools
         run: make setup
-      - name: Check framework and generated contracts
+      - name: Run repository checks
         env:
-          GOWORK: 'off'
+          GOWORK: off
           CONTRACT_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before || github.sha }}
         run: make check

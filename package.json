@@ -3,13 +3,21 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": "24.22.1"
+    "node": "24.22.1",
+    "pnpm": "10.33.4"
   },
   "scripts": {
     "generate": "openapi-typescript contracts/platform.openapi.yaml -o sdk/platform.gen.ts"
   },
   "devDependencies": {
     "openapi-typescript": "7.13.0",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "@stuhelper/engineering-tools": "git+https://github.com/StuHelper/stuhelper-next.git#360f0e9c02738117d1aa8cdac090cf0bae11f217"
+  },
+  "packageManager": "pnpm@10.33.4",
+  "pnpm": {
+    "overrides": {
+      "katex": "0.18.2"
+    }
   }
 }
