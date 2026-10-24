@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: StuHelper platform framework API
-  version: 0.1.0
+  version: 0.2.0
   description: Framework endpoints only. Capabilities describe availability, not user permissions.
 paths:
   /healthz:
@@ -19,7 +19,7 @@ paths:
       operationId: getReadiness
       responses:
         '200':
-          description: Enabled modules and required dependencies are ready
+          description: Critical modules and their core dependencies are ready
           content:
             application/json:
               schema:
@@ -45,7 +45,7 @@ paths:
         - applicationSession: []
       responses:
         '200':
-          description: Module lifecycle state for an authorized administrator
+          description: Module lifecycle and health for an authorized administrator
           content:
             application/json:
               schema:
@@ -109,6 +109,10 @@ components:
         state:
           type: string
           enum: [disabled, starting, ready, stopping, stopped, failed]
+        health:
+          type: string
+          enum: [available, unavailable, disabled]
+          description: Current core health, independent of lifecycle state.
     Problem:
       type: object
       required: [code, request_id]

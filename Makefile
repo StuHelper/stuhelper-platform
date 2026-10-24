@@ -1,7 +1,12 @@
+GOWORK ?= off
+export GOWORK
+
 .PHONY: check test build run generate check-generated
 
 check: check-generated
 	python3 scripts/check_contracts.py
+	python3 scripts/check_boundaries.py
+	python3 -m unittest discover -s scripts -p 'test_*.py'
 	test -z "$$(gofmt -l cmd module transport internal application examples)"
 	go vet ./...
 	go test -race ./...

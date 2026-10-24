@@ -54,7 +54,7 @@ func New(config Config, modules Modules) (*fx.App, error) {
 	if !slices.Contains(config.Enabled, "platform") {
 		return nil, errors.New("platform must be enabled")
 	}
-	definitions := append([]module.Definition{{Descriptor: module.Descriptor{ID: "platform", Version: "development", API: 1, Capabilities: []string{"platform.status", "platform.modules"}}}}, modules.Definitions...)
+	definitions := append([]module.Definition{{Critical: true, Descriptor: module.Descriptor{ID: "platform", Version: "development", API: 1, Capabilities: []string{"platform.status", "platform.modules"}}}}, modules.Definitions...)
 	registry, err := module.New(definitions, config.Enabled)
 	if err != nil {
 		return nil, err
@@ -66,7 +66,9 @@ func New(config Config, modules Modules) (*fx.App, error) {
 			defer cancel()
 			transport.JSON(w, 200, gen.Capabilities{ApiVersion: gen.N1, Capabilities: registry.Capabilities(ctx)})
 		})},
-		{Method: "GET", Path: "/api/v1/admin/modules", Module: "platform", Capability: "platform.modules", Access: transport.Protected, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { transport.JSON(w, 200, registry.Statuses()) })},
+		{Method: "GET", Path: "/api/v1/admin/modules", Module: "platform", Capability: "platform.modules", Access: transport.Protected, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			transport.JSON(w, 200, registry.StatusesContext(r.Context()))
+		})},
 	}
 	routes = append(routes, modules.Routes...)
 	handler, err := transport.NewHandler(registry, routes, modules.Authenticator, modules.Authorizer, logger)

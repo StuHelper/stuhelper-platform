@@ -2,7 +2,9 @@
   "name": "stuhelper-platform-contracts",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=24" },
+  "engines": {
+    "node": "24.22.1"
+  },
   "scripts": {
     "generate": "openapi-typescript contracts/platform.openapi.yaml -o sdk/platform.gen.ts"
   },

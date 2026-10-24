@@ -103,7 +103,7 @@ func NewHandler(registry *module.Registry, routes []Route, authn Authenticator, 
 		}
 		mux.Handle(route.Method+" "+route.Path, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
-			available := registry.Available(ctx, route.Module)
+			available := registry.CapabilityAvailable(ctx, route.Module, route.Capability)
 			cancel()
 			if !available {
 				problem(w, r, 503, "module_unavailable")
@@ -144,7 +144,7 @@ func NewHandler(registry *module.Registry, routes []Route, authn Authenticator, 
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 		defer cancel()
-		if !registry.Healthy(ctx) {
+		if !registry.ReadyForTraffic(ctx) {
 			problem(w, r, 503, "not_ready")
 			return
 		}
