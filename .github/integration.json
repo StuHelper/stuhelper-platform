@@ -1,8 +1,0 @@
-{
-  "pull_request": 2,
-  "candidates": {
-    "architecture": "pr:3",
-    "web": "pr:2",
-    "admin": "pr:2"
-  }
-}
