@@ -70,7 +70,7 @@ jobs:
   integration:
     name: Cross-repository checks
     needs: framework
-    uses: StuHelper/stuhelper-next/.github/workflows/integration.yml@tooling-v0.1.4
+    uses: StuHelper/stuhelper-next/.github/workflows/integration.yml@tooling-v0.1.5
     with:
       source: ${{ inputs.combination || 'latest' }}
       candidate_repository: ${{ github.repository }}
