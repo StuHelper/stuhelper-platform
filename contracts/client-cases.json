@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "capabilities": [
+    {
+      "name": "supported and optional future capability",
+      "body": {
+        "api_version": 1,
+        "capabilities": [
+          "platform.status",
+          "future.optional"
+        ]
+      },
+      "accepted": true
+    },
+    {
+      "name": "wrong API version",
+      "body": {
+        "api_version": 2,
+        "capabilities": []
+      },
+      "accepted": false
+    },
+    {
+      "name": "missing API version",
+      "body": {
+        "capabilities": []
+      },
+      "accepted": false
+    },
+    {
+      "name": "non-string capability",
+      "body": {
+        "api_version": 1,
+        "capabilities": [
+          1
+        ]
+      },
+      "accepted": false
+    },
+    {
+      "name": "empty response",
+      "body": null,
+      "accepted": false
+    }
+  ],
+  "modules": [
+    {
+      "name": "older lifecycle response",
+      "body": [
+        {
+          "id": "platform",
+          "state": "ready"
+        }
+      ],
+      "accepted": true
+    },
+    {
+      "name": "started remote service with unavailable health",
+      "body": [
+        {
+          "id": "verification",
+          "state": "ready",
+          "health": "unavailable"
+        }
+      ],
+      "accepted": true
+    },
+    {
+      "name": "unknown lifecycle",
+      "body": [
+        {
+          "id": "a",
+          "state": "magic"
+        }
+      ],
+      "accepted": false
+    },
+    {
+      "name": "unknown health",
+      "body": [
+        {
+          "id": "a",
+          "state": "ready",
+          "health": "magic"
+        }
+      ],
+      "accepted": false
+    }
+  ],
+  "http_errors": [
+    {
+      "status": 401,
+      "body": {},
+      "code": "unauthenticated"
+    },
+    {
+      "status": 403,
+      "body": {},
+      "code": "forbidden"
+    },
+    {
+      "status": 502,
+      "body": {},
+      "code": "unavailable"
+    },
+    {
+      "status": 503,
+      "body": {
+        "code": "identity_unavailable"
+      },
+      "code": "identity"
+    }
+  ]
+}

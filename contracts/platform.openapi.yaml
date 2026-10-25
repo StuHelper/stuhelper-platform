@@ -1,0 +1,123 @@
+openapi: 3.1.0
+info:
+  title: StuHelper platform framework API
+  version: 0.2.0
+  description: Framework endpoints only. Capabilities describe availability, not user permissions.
+paths:
+  /healthz:
+    get:
+      operationId: getLiveness
+      responses:
+        '200':
+          description: HTTP process is alive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+  /readyz:
+    get:
+      operationId: getReadiness
+      responses:
+        '200':
+          description: Critical modules and their core dependencies are ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /api/v1/system/capabilities:
+    get:
+      operationId: getCapabilities
+      responses:
+        '200':
+          description: Currently available capabilities; grants no authority to the caller
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Capabilities'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /api/v1/admin/modules:
+    get:
+      operationId: getModules
+      security:
+        - applicationSession: []
+      responses:
+        '200':
+          description: Module lifecycle and health for an authorized administrator
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ModuleStatus'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: Permission denied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+components:
+  securitySchemes:
+    applicationSession:
+      type: apiKey
+      in: cookie
+      name: stuhelper_session
+      description: Future identity adapter contract. The framework does not issue or accept sessions yet.
+  responses:
+    Unavailable:
+      description: Required module or identity/authorization adapter is unavailable
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+  schemas:
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [alive, ready]
+    Capabilities:
+      type: object
+      required: [api_version, capabilities]
+      properties:
+        api_version:
+          type: integer
+          enum: [1]
+        capabilities:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+    ModuleStatus:
+      type: object
+      required: [id, state]
+      properties:
+        id:
+          type: string
+        state:
+          type: string
+          enum: [disabled, starting, ready, stopping, stopped, failed]
+        health:
+          type: string
+          enum: [available, unavailable, disabled]
+          description: Current core health, independent of lifecycle state.
+    Problem:
+      type: object
+      required: [code, request_id]
+      properties:
+        code:
+          type: string
+        request_id:
+          type: string
