@@ -1,42 +1,28 @@
 GOWORK ?= off
 export GOWORK
 
-.PHONY: check test build run generate check-generated
-
+.PHONY: setup check test build run generate check-generated hooks
+setup:
+	LEFTHOOK=0 pnpm install --frozen-lockfile
 check: check-generated
-	pnpm exec stuhelper-check release
-	python3 scripts/check_contracts.py
-	python3 scripts/check_boundaries.py
-	python3 -m unittest discover -s scripts -p 'test_*.py'
-	test -z "$$(gofmt -l cmd module transport internal application examples)"
+	pnpm exec stuhelper-check repository
+	node scripts/check-contracts.mjs
+	node scripts/check-boundaries.mjs
+	node --test scripts/*.test.mjs
+	test -z "$$(gofmt -l module transport internal application examples)"
 	go vet ./...
 	go test -race ./...
-	go build -o bin/stuhelper-platform ./cmd/platform
+	go build ./...
 	pnpm exec stuhelper-check workflows
-
 test:
 	go test -race ./...
-
 build:
-	go build -o bin/stuhelper-platform ./cmd/platform
-
+	go build ./...
 run:
-	go run ./cmd/platform
-
+	go run ./examples/server
 generate:
-	pnpm exec stuhelper-check descriptor platform > internal/composition/platform.json
-	go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.8.0 --config contracts/oapi-codegen.yaml contracts/platform.openapi.yaml
-	pnpm run generate
-
+	node scripts/generate.mjs
 check-generated:
-	@tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; \
-	cp internal/api/gen/platform.gen.go "$$tmp/go"; \
-	cp sdk/platform.gen.ts "$$tmp/ts"; \
-	cp internal/composition/platform.json "$$tmp/descriptor"; \
-	$(MAKE) generate && \
-	cmp internal/api/gen/platform.gen.go "$$tmp/go" && \
-	cmp sdk/platform.gen.ts "$$tmp/ts" && \
-	cmp internal/composition/platform.json "$$tmp/descriptor"
-
-setup:
-	pnpm install --frozen-lockfile
+	node scripts/generate.mjs --check
+hooks:
+	pnpm exec lefthook install

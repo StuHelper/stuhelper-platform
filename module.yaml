@@ -1,0 +1,10 @@
+id: platform
+version: development
+api: 1
+critical: true
+requires: []
+optional: []
+capabilities:
+  - platform.status
+  - platform.modules
+capability_requires: {}
