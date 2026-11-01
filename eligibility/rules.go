@@ -7,6 +7,7 @@ import "errors"
 type Condition string
 
 const (
+	Content    Condition = "content_access"
 	Campus     Condition = "campus_eligibility"
 	Phone      Condition = "phone_bound"
 	Identity   Condition = "identity_verified"
@@ -35,13 +36,13 @@ type Result struct {
 var ErrRule = errors.New("invalid_eligibility_rule")
 
 func Validate(rule Rule) error {
-	if rule.Version == "" || len(rule.Version) > 128 || len(rule.Conditions) > 4 {
+	if rule.Version == "" || len(rule.Version) > 128 || len(rule.Conditions) > 5 {
 		return ErrRule
 	}
 	seen := map[Condition]bool{}
 	for _, c := range rule.Conditions {
 		switch c {
-		case Campus, Phone, Identity, Enrollment:
+		case Content, Campus, Phone, Identity, Enrollment:
 		default:
 			return ErrRule
 		}
