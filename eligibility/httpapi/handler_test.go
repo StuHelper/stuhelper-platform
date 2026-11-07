@@ -3,23 +3,17 @@ package httpapi_test
 import (
 	"context"
 	e "github.com/StuHelper/stuhelper-platform/eligibility"
-	"github.com/StuHelper/stuhelper-platform/eligibility/filerepo"
 	"github.com/StuHelper/stuhelper-platform/eligibility/httpapi"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
 
 func TestRuleConfigurationChecksCurrentSchoolPermission(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "rules.json")
-	if err := os.WriteFile(path, []byte(`{"version":"initial","rules":{}}`), 0600); err != nil {
-		t.Fatal(err)
-	}
+	repo := &permissionRepo{}
 	allowed := true
-	h := httpapi.Handler{Service: e.Service{Repo: filerepo.Repository{Path: path}}, Authenticate: func(r *http.Request) (string, error) {
+	h := httpapi.Handler{Service: e.Service{Repo: repo}, Authenticate: func(r *http.Request) (string, error) {
 		if r.Header.Get("Authorization") != "Bearer admin" {
 			return "", httpapi.ErrUnauthenticated
 		}
@@ -48,4 +42,17 @@ func TestRuleConfigurationChecksCurrentSchoolPermission(t *testing.T) {
 	call("Bearer admin", "school", 200)
 	allowed = false
 	call("Bearer admin", "school", 403)
+	if repo.writes != 1 {
+		t.Fatal("unauthorized write reached repository", repo.writes)
+	}
+}
+
+type permissionRepo struct {
+	e.Defaults
+	writes int
+}
+
+func (r *permissionRepo) Apply(_ context.Context, in e.Update) (e.Rule, error) {
+	r.writes++
+	return e.Rule{Version: "2", Conditions: in.Change.Conditions}, nil
 }

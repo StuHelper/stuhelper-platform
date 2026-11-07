@@ -5,11 +5,12 @@ export GOWORK
 setup:
 	LEFTHOOK=0 pnpm install --frozen-lockfile
 check: check-generated
+	test -n "$(STUHELPER_PLATFORM_TEST_DSN)" || (echo "Use scripts/check-with-postgres.sh"; exit 1)
 	pnpm exec stuhelper-check repository
 	node scripts/check-contracts.mjs
 	node scripts/check-boundaries.mjs
 	node --test scripts/*.test.mjs
-	test -z "$$(gofmt -l module transport internal application examples eligibility)"
+	test -z "$$(gofmt -l module transport internal application examples eligibility modulehistory postgres)"
 	go vet ./...
 	go test -race ./...
 	go build ./...

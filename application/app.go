@@ -45,6 +45,7 @@ func LoadConfig() (Config, error) {
 }
 
 type Modules struct {
+	PlatformReady func(context.Context) error
 	Definitions   []module.Definition
 	Routes        []transport.Route
 	Authenticator transport.Authenticator
@@ -58,6 +59,9 @@ func New(config Config, modules Modules) (*fx.App, error) {
 	platform, err := composition.Platform()
 	if err != nil {
 		return nil, err
+	}
+	if modules.PlatformReady != nil {
+		platform.Ready = modules.PlatformReady
 	}
 	definitions := append([]module.Definition{platform}, modules.Definitions...)
 	registry, err := module.New(definitions, config.Enabled)

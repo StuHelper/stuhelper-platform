@@ -10,6 +10,16 @@
       "platform.status",
       "platform.modules"
     ],
-    "capability_requires": {}
+    "capability_requires": {},
+    "scenario_tests": {
+      "PLAT-CONFIG-01": [
+        "postgres/integration_test.go#TestConfigurationConcurrencyReplayRollbackAndRetention",
+        "eligibility/cache_test.go#TestRuleCacheExpiryInvalidationAndFailure",
+        "eligibility/cache_test.go#TestRuleCacheDoesNotReinsertInvalidatedInFlightRead"
+      ],
+      "PLAT-HISTORY-01": [
+        "postgres/integration_test.go#TestInstallationFactsAreDurableMonotoneAndUnknownFailsClosed"
+      ]
+    }
   }
 }

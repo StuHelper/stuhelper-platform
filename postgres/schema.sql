@@ -1,0 +1,11 @@
+CREATE SCHEMA IF NOT EXISTS platform;
+CREATE TABLE IF NOT EXISTS platform.configuration(singleton boolean PRIMARY KEY CHECK(singleton), revision bigint NOT NULL CHECK(revision>0));
+INSERT INTO platform.configuration VALUES(true,1) ON CONFLICT DO NOTHING;
+CREATE TABLE IF NOT EXISTS platform.eligibility_rules(school text NOT NULL, action text NOT NULL, conditions jsonb NOT NULL CHECK(jsonb_typeof(conditions)='array'), PRIMARY KEY(school,action));
+CREATE TABLE IF NOT EXISTS platform.eligibility_requests(actor text NOT NULL, key text NOT NULL, digest text NOT NULL, result jsonb NOT NULL, created_at timestamptz NOT NULL, PRIMARY KEY(actor,key));
+CREATE INDEX IF NOT EXISTS platform_requests_expiry ON platform.eligibility_requests(created_at);
+CREATE TABLE IF NOT EXISTS platform.installations(module text PRIMARY KEY, state text NOT NULL CHECK(state IN('installed','never_installed')));
+CREATE TABLE IF NOT EXISTS platform.audit(id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, actor text NOT NULL, action text NOT NULL, target text NOT NULL, data jsonb NOT NULL, created_at timestamptz NOT NULL);
+CREATE INDEX IF NOT EXISTS platform_audit_expiry ON platform.audit(created_at);
+REVOKE ALL ON SCHEMA platform FROM PUBLIC;
+REVOKE ALL ON ALL TABLES IN SCHEMA platform FROM PUBLIC;
