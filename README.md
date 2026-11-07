@@ -40,3 +40,5 @@ make check-generated
 使用 oapi-codegen v2.8.0 和 openapi-typescript v7.13.0，生成文件禁止手改。Web/Admin 独立保存生成快照，跨仓库检查由架构仓库负责。正式模块依赖固定已发布版本。私有 stuhelper-backend 承载产品 main 入口；本仓库的 examples/server 用于公开检查和演示。
 
 架构、规格与工作区入口见 [StuHelper Next](https://github.com/StuHelper/stuhelper-next)。
+
+modulehistory 提供独立于启用状态的安装事实接口，filerepo 保存私有部署记录。初始化必须明确列出确定从未安装的模块且不能覆盖文件，ObserveInstalled 单向保存已安装事实。文件缺失、损坏或没有记录时不推断为从未安装，读取与写入受进程间锁保护。
