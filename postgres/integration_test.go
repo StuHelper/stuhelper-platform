@@ -110,7 +110,10 @@ func TestConfigurationConcurrencyReplayRollbackAndRetention(t *testing.T) {
 	if rule.Version != "2" {
 		t.Fatal("partial commit", rule)
 	}
-	if _, err = owner.Exec(`DROP TRIGGER fail ON platform.audit;INSERT INTO platform.audit(actor,action,target,data,created_at) SELECT 'admin','test','school','{}',$1 FROM generate_series(1,600)`, now.AddDate(-2, 0, 0)); err != nil {
+	if _, err = owner.Exec(`DROP TRIGGER fail ON platform.audit`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = owner.Exec(`INSERT INTO platform.audit(actor,action,target,data,created_at) SELECT 'admin','test','school','{}',$1 FROM generate_series(1,600)`, now.AddDate(-2, 0, 0)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = s.Set(ctx, "admin", "above-cap", "school", "content.enter", in); err != nil {
