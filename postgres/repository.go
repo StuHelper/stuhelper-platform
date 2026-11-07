@@ -60,8 +60,8 @@ func (r *Repository) Cleanup(ctx context.Context, now time.Time) (int64, error) 
 		sql    string
 		cutoff time.Time
 	}{
-		{`DELETE FROM platform.eligibility_requests WHERE (actor,key) IN (SELECT actor,key FROM platform.eligibility_requests WHERE created_at <= $1 ORDER BY created_at LIMIT 100 FOR UPDATE SKIP LOCKED)`, now.Add(-24 * time.Hour)},
-		{`DELETE FROM platform.audit WHERE id IN (SELECT id FROM platform.audit WHERE created_at <= $1 ORDER BY created_at LIMIT 100 FOR UPDATE SKIP LOCKED)`, now.AddDate(-1, 0, 0)},
+		{`DELETE FROM platform.eligibility_requests WHERE (actor,key) IN (SELECT actor,key FROM platform.eligibility_requests WHERE created_at <= $1 ORDER BY created_at LIMIT 100)`, now.Add(-24 * time.Hour)},
+		{`DELETE FROM platform.audit WHERE id IN (SELECT id FROM platform.audit WHERE created_at <= $1 ORDER BY created_at LIMIT 100)`, now.AddDate(-1, 0, 0)},
 	} {
 		result, err := tx.ExecContext(call, query.sql, query.cutoff)
 		if err != nil {
