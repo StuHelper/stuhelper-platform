@@ -12,6 +12,27 @@ concurrency:
   cancel-in-progress: true
 jobs:
   check:
-    uses: StuHelper/stuhelper-tooling/.github/workflows/go-checks.yml@v0.1.0
-    with:
-      name: Platform checks
+    name: Platform checks
+    runs-on: ubuntu-26.04
+    timeout-minutes: 25
+    env:
+      LEFTHOOK: '0'
+      GOWORK: 'off'
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: StuHelper/stuhelper-tooling/actions/setup@v0.1.0
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: .go-version
+          cache: false
+      - name: Install locked tools and PostgreSQL
+        run: |
+          pnpm install --frozen-lockfile
+          sudo apt-get update -qq
+          sudo apt-get install -y postgresql postgresql-client
+          dpkg-query -W postgresql postgresql-client
+      - name: Check standalone module with isolated database
+        run: bash scripts/check-with-postgres.sh
