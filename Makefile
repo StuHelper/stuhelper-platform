@@ -21,8 +21,10 @@ build:
 run:
 	go run ./examples/server
 generate:
+	node scripts/generate-eligibility.mjs
 	node scripts/generate.mjs
 check-generated:
+	node scripts/generate-eligibility.mjs --check
 	node scripts/generate.mjs --check
 hooks:
 	pnpm exec lefthook install
