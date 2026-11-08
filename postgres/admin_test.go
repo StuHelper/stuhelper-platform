@@ -91,8 +91,10 @@ func TestAdminAO01AO04ScopeAndSeparateCapabilities(t *testing.T) {
 	}
 	deny(t, s.Evaluate(ctx, member, "billing.refund", a.Global))
 	deny(t, s.Evaluate(ctx, member, "verification.modify", a.Global))
-	// Even trusted platform identity does not implicitly grant sensitive business rights.
-	deny(t, s.Evaluate(ctx, boss, "billing.refund", a.Global))
+	// Trusted platform identity includes sensitive business capabilities.
+	if err := s.Evaluate(ctx, boss, "billing.refund", a.Global); err != nil {
+		t.Fatal(err)
+	}
 }
 func TestAdminDelegationSelfEscalationAndImmediateRevocation(t *testing.T) {
 	s, repo := service(t)

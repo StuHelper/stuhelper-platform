@@ -72,7 +72,7 @@ func (s adminStore) Role(ctx context.Context, id string) (out a.Role, err error)
 	return
 }
 func (s adminStore) Effective(ctx context.Context, subject string) (a.Effective, error) {
-	out := a.Effective{Subject: subject, Revision: "0", Grants: []a.Grant{}}
+	out := a.Effective{Subject: subject, Revision: "0", Grants: []a.Grant{}, AuthorizationMode: a.ExplicitGrants}
 	var revision int64
 	e := s.tx.QueryRowContext(ctx, `SELECT revision FROM platform.admin_subjects WHERE subject=$1`, subject).Scan(&revision)
 	if errors.Is(e, sql.ErrNoRows) {

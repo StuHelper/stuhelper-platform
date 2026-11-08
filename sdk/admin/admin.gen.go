@@ -32,6 +32,24 @@ func (e AdminAuditPageSource) Valid() bool {
 	}
 }
 
+// Defines values for AdminEffectiveAuthorizationMode.
+const (
+	ExplicitGrants   AdminEffectiveAuthorizationMode = "explicit_grants"
+	PlatformAdminAll AdminEffectiveAuthorizationMode = "platform_admin_all"
+)
+
+// Valid indicates whether the value is a known member of the AdminEffectiveAuthorizationMode enum.
+func (e AdminEffectiveAuthorizationMode) Valid() bool {
+	switch e {
+	case ExplicitGrants:
+		return true
+	case PlatformAdminAll:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for AdminErrorCode.
 const (
 	Conflict        AdminErrorCode = "conflict"
@@ -108,10 +126,17 @@ type AdminAuditPageSource string
 
 // AdminEffective defines model for AdminEffective.
 type AdminEffective struct {
+	// AuthorizationMode platform_admin_all 表示被查询者是可信平台管理员，自动拥有任意能力及任意范围（含敏感能力）；explicit_grants 表示按 grants 显式授权。不得用 grants 是否为空判断平台管理员权限。
+	AuthorizationMode AdminEffectiveAuthorizationMode `json:"authorization_mode"`
+
+	// Grants 查询范围内的显式授权记录；平台管理员的全部能力由 authorization_mode 表示，不创建虚假角色授权。
 	Grants   []AdminGrant `json:"grants"`
 	Revision string       `json:"revision"`
 	Subject  string       `json:"subject"`
 }
+
+// AdminEffectiveAuthorizationMode platform_admin_all 表示被查询者是可信平台管理员，自动拥有任意能力及任意范围（含敏感能力）；explicit_grants 表示按 grants 显式授权。不得用 grants 是否为空判断平台管理员权限。
+type AdminEffectiveAuthorizationMode string
 
 // AdminError defines model for AdminError.
 type AdminError struct {
@@ -289,31 +314,31 @@ type ClientInterface interface {
 
 	// GetAdminEffective performs a GET /api/v1/platform/admin/administrators/{subject}/effective (the `GetAdminEffective` operationId) request.
 	//
-	// 返回查询范围内的显式授权；角色包含查询范围时将范围收窄。查询他人需要该范围的 platform.authorization.read。修订号属于整个管理员授权集合。可信平台管理员的管理权由身份接口单独提供，不伪造为角色。
+	// 先检查查询者权限，再从可信身份接口读取被查询者的当前平台管理员身份。平台管理员返回 authorization_mode=platform_admin_all，表示全部能力及全部范围（含敏感能力）；其他管理员返回 explicit_grants 及查询范围内显式授权。查询他人需要该范围的 platform.authorization.read。修订号仅表示显式授权集合，不代表身份修订，客户端不能据此缓存平台管理员身份。
 	GetAdminEffective(ctx context.Context, subject string, params *GetAdminEffectiveParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// RevokeAdminRoleWithBody performs a DELETE /api/v1/platform/admin/administrators/{subject}/grants (the `RevokeAdminRole` operationId) request,
 	// with any type of body and a specified content type.
 	//
-	// 能力与三个范围维度分别检查。禁止给自己增加授权；只有可信平台管理员可授予 platform.* 能力。授权修订号冲突返回 409。每个管理员最多 1000 条有效授权。重复请求在重新授权后返回原结果。
+	// 可信平台管理员可授予任意能力及任意范围，包含敏感能力；普通管理员只能委托自己持有的能力与范围，不能授予 platform.* 能力。禁止任何人给自己增加授权。授权修订号冲突返回 409。每个管理员最多 1000 条有效授权。重复请求重新授权后返回原结果。
 	RevokeAdminRoleWithBody(ctx context.Context, subject string, params *RevokeAdminRoleParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// RevokeAdminRole performs a DELETE /api/v1/platform/admin/administrators/{subject}/grants (the `RevokeAdminRole` operationId) request.
 	// Takes a body of the `application/json` content type.
 	//
-	// 能力与三个范围维度分别检查。禁止给自己增加授权；只有可信平台管理员可授予 platform.* 能力。授权修订号冲突返回 409。每个管理员最多 1000 条有效授权。重复请求在重新授权后返回原结果。
+	// 可信平台管理员可授予任意能力及任意范围，包含敏感能力；普通管理员只能委托自己持有的能力与范围，不能授予 platform.* 能力。禁止任何人给自己增加授权。授权修订号冲突返回 409。每个管理员最多 1000 条有效授权。重复请求重新授权后返回原结果。
 	RevokeAdminRole(ctx context.Context, subject string, params *RevokeAdminRoleParams, body RevokeAdminRoleJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GrantAdminRoleWithBody performs a PUT /api/v1/platform/admin/administrators/{subject}/grants (the `GrantAdminRole` operationId) request,
 	// with any type of body and a specified content type.
 	//
-	// 能力与三个范围维度分别检查。禁止给自己增加授权；只有可信平台管理员可授予 platform.* 能力。授权修订号冲突返回 409。每个管理员最多 1000 条有效授权。重复请求在重新授权后返回原结果。
+	// 可信平台管理员可授予任意能力及任意范围，包含敏感能力；普通管理员只能委托自己持有的能力与范围，不能授予 platform.* 能力。禁止任何人给自己增加授权。授权修订号冲突返回 409。每个管理员最多 1000 条有效授权。重复请求重新授权后返回原结果。
 	GrantAdminRoleWithBody(ctx context.Context, subject string, params *GrantAdminRoleParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GrantAdminRole performs a PUT /api/v1/platform/admin/administrators/{subject}/grants (the `GrantAdminRole` operationId) request.
 	// Takes a body of the `application/json` content type.
 	//
-	// 能力与三个范围维度分别检查。禁止给自己增加授权；只有可信平台管理员可授予 platform.* 能力。授权修订号冲突返回 409。每个管理员最多 1000 条有效授权。重复请求在重新授权后返回原结果。
+	// 可信平台管理员可授予任意能力及任意范围，包含敏感能力；普通管理员只能委托自己持有的能力与范围，不能授予 platform.* 能力。禁止任何人给自己增加授权。授权修订号冲突返回 409。每个管理员最多 1000 条有效授权。重复请求重新授权后返回原结果。
 	GrantAdminRole(ctx context.Context, subject string, params *GrantAdminRoleParams, body GrantAdminRoleJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListPlatformOperations performs a GET /api/v1/platform/admin/operations (the `ListPlatformOperations` operationId) request.
@@ -346,7 +371,7 @@ type ClientInterface interface {
 
 // GetAdminEffective performs a GET /api/v1/platform/admin/administrators/{subject}/effective (the `GetAdminEffective` operationId) request.
 //
-// 返回查询范围内的显式授权；角色包含查询范围时将范围收窄。查询他人需要该范围的 platform.authorization.read。修订号属于整个管理员授权集合。可信平台管理员的管理权由身份接口单独提供，不伪造为角色。
+// 先检查查询者权限，再从可信身份接口读取被查询者的当前平台管理员身份。平台管理员返回 authorization_mode=platform_admin_all，表示全部能力及全部范围（含敏感能力）；其他管理员返回 explicit_grants 及查询范围内显式授权。查询他人需要该范围的 platform.authorization.read。修订号仅表示显式授权集合，不代表身份修订，客户端不能据此缓存平台管理员身份。
 func (c *Client) GetAdminEffective(ctx context.Context, subject string, params *GetAdminEffectiveParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetAdminEffectiveRequest(c.Server, subject, params)
 	if err != nil {
@@ -362,7 +387,7 @@ func (c *Client) GetAdminEffective(ctx context.Context, subject string, params *
 // RevokeAdminRoleWithBody performs a DELETE /api/v1/platform/admin/administrators/{subject}/grants (the `RevokeAdminRole` operationId) request,
 // with any type of body and a specified content type.
 //
-// 能力与三个范围维度分别检查。禁止给自己增加授权；只有可信平台管理员可授予 platform.* 能力。授权修订号冲突返回 409。每个管理员最多 1000 条有效授权。重复请求在重新授权后返回原结果。
+// 可信平台管理员可授予任意能力及任意范围，包含敏感能力；普通管理员只能委托自己持有的能力与范围，不能授予 platform.* 能力。禁止任何人给自己增加授权。授权修订号冲突返回 409。每个管理员最多 1000 条有效授权。重复请求重新授权后返回原结果。
 func (c *Client) RevokeAdminRoleWithBody(ctx context.Context, subject string, params *RevokeAdminRoleParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewRevokeAdminRoleRequestWithBody(c.Server, subject, params, contentType, body)
 	if err != nil {
@@ -378,7 +403,7 @@ func (c *Client) RevokeAdminRoleWithBody(ctx context.Context, subject string, pa
 // RevokeAdminRole performs a DELETE /api/v1/platform/admin/administrators/{subject}/grants (the `RevokeAdminRole` operationId) request.
 // Takes a body of the `application/json` content type.
 //
-// 能力与三个范围维度分别检查。禁止给自己增加授权；只有可信平台管理员可授予 platform.* 能力。授权修订号冲突返回 409。每个管理员最多 1000 条有效授权。重复请求在重新授权后返回原结果。
+// 可信平台管理员可授予任意能力及任意范围，包含敏感能力；普通管理员只能委托自己持有的能力与范围，不能授予 platform.* 能力。禁止任何人给自己增加授权。授权修订号冲突返回 409。每个管理员最多 1000 条有效授权。重复请求重新授权后返回原结果。
 func (c *Client) RevokeAdminRole(ctx context.Context, subject string, params *RevokeAdminRoleParams, body RevokeAdminRoleJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewRevokeAdminRoleRequest(c.Server, subject, params, body)
 	if err != nil {
@@ -394,7 +419,7 @@ func (c *Client) RevokeAdminRole(ctx context.Context, subject string, params *Re
 // GrantAdminRoleWithBody performs a PUT /api/v1/platform/admin/administrators/{subject}/grants (the `GrantAdminRole` operationId) request,
 // with any type of body and a specified content type.
 //
-// 能力与三个范围维度分别检查。禁止给自己增加授权；只有可信平台管理员可授予 platform.* 能力。授权修订号冲突返回 409。每个管理员最多 1000 条有效授权。重复请求在重新授权后返回原结果。
+// 可信平台管理员可授予任意能力及任意范围，包含敏感能力；普通管理员只能委托自己持有的能力与范围，不能授予 platform.* 能力。禁止任何人给自己增加授权。授权修订号冲突返回 409。每个管理员最多 1000 条有效授权。重复请求重新授权后返回原结果。
 func (c *Client) GrantAdminRoleWithBody(ctx context.Context, subject string, params *GrantAdminRoleParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGrantAdminRoleRequestWithBody(c.Server, subject, params, contentType, body)
 	if err != nil {
@@ -410,7 +435,7 @@ func (c *Client) GrantAdminRoleWithBody(ctx context.Context, subject string, par
 // GrantAdminRole performs a PUT /api/v1/platform/admin/administrators/{subject}/grants (the `GrantAdminRole` operationId) request.
 // Takes a body of the `application/json` content type.
 //
-// 能力与三个范围维度分别检查。禁止给自己增加授权；只有可信平台管理员可授予 platform.* 能力。授权修订号冲突返回 409。每个管理员最多 1000 条有效授权。重复请求在重新授权后返回原结果。
+// 可信平台管理员可授予任意能力及任意范围，包含敏感能力；普通管理员只能委托自己持有的能力与范围，不能授予 platform.* 能力。禁止任何人给自己增加授权。授权修订号冲突返回 409。每个管理员最多 1000 条有效授权。重复请求重新授权后返回原结果。
 func (c *Client) GrantAdminRole(ctx context.Context, subject string, params *GrantAdminRoleParams, body GrantAdminRoleJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGrantAdminRoleRequest(c.Server, subject, params, body)
 	if err != nil {
@@ -1039,7 +1064,7 @@ type ClientWithResponsesInterface interface {
 
 	// GetAdminEffectiveWithResponse performs a GET /api/v1/platform/admin/administrators/{subject}/effective (the `GetAdminEffective` operationId) request.
 	//
-	// 返回查询范围内的显式授权；角色包含查询范围时将范围收窄。查询他人需要该范围的 platform.authorization.read。修订号属于整个管理员授权集合。可信平台管理员的管理权由身份接口单独提供，不伪造为角色。
+	// 先检查查询者权限，再从可信身份接口读取被查询者的当前平台管理员身份。平台管理员返回 authorization_mode=platform_admin_all，表示全部能力及全部范围（含敏感能力）；其他管理员返回 explicit_grants 及查询范围内显式授权。查询他人需要该范围的 platform.authorization.read。修订号仅表示显式授权集合，不代表身份修订，客户端不能据此缓存平台管理员身份。
 	//
 	// Returns a wrapper object for the known response body format(s).
 	GetAdminEffectiveWithResponse(ctx context.Context, subject string, params *GetAdminEffectiveParams, reqEditors ...RequestEditorFn) (*GetAdminEffectiveResponse, error)
@@ -1047,7 +1072,7 @@ type ClientWithResponsesInterface interface {
 	// RevokeAdminRoleWithBodyWithResponse performs a DELETE /api/v1/platform/admin/administrators/{subject}/grants (the `RevokeAdminRole` operationId) request,
 	// with any type of body and a specified content type.
 	//
-	// 能力与三个范围维度分别检查。禁止给自己增加授权；只有可信平台管理员可授予 platform.* 能力。授权修订号冲突返回 409。每个管理员最多 1000 条有效授权。重复请求在重新授权后返回原结果。
+	// 可信平台管理员可授予任意能力及任意范围，包含敏感能力；普通管理员只能委托自己持有的能力与范围，不能授予 platform.* 能力。禁止任何人给自己增加授权。授权修订号冲突返回 409。每个管理员最多 1000 条有效授权。重复请求重新授权后返回原结果。
 	//
 	// Returns a wrapper object for the known response body format(s).
 	RevokeAdminRoleWithBodyWithResponse(ctx context.Context, subject string, params *RevokeAdminRoleParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RevokeAdminRoleResponse, error)
@@ -1055,13 +1080,13 @@ type ClientWithResponsesInterface interface {
 	// RevokeAdminRoleWithResponse performs a DELETE /api/v1/platform/admin/administrators/{subject}/grants (the `RevokeAdminRole` operationId) request.
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
-	// 能力与三个范围维度分别检查。禁止给自己增加授权；只有可信平台管理员可授予 platform.* 能力。授权修订号冲突返回 409。每个管理员最多 1000 条有效授权。重复请求在重新授权后返回原结果。
+	// 可信平台管理员可授予任意能力及任意范围，包含敏感能力；普通管理员只能委托自己持有的能力与范围，不能授予 platform.* 能力。禁止任何人给自己增加授权。授权修订号冲突返回 409。每个管理员最多 1000 条有效授权。重复请求重新授权后返回原结果。
 	RevokeAdminRoleWithResponse(ctx context.Context, subject string, params *RevokeAdminRoleParams, body RevokeAdminRoleJSONRequestBody, reqEditors ...RequestEditorFn) (*RevokeAdminRoleResponse, error)
 
 	// GrantAdminRoleWithBodyWithResponse performs a PUT /api/v1/platform/admin/administrators/{subject}/grants (the `GrantAdminRole` operationId) request,
 	// with any type of body and a specified content type.
 	//
-	// 能力与三个范围维度分别检查。禁止给自己增加授权；只有可信平台管理员可授予 platform.* 能力。授权修订号冲突返回 409。每个管理员最多 1000 条有效授权。重复请求在重新授权后返回原结果。
+	// 可信平台管理员可授予任意能力及任意范围，包含敏感能力；普通管理员只能委托自己持有的能力与范围，不能授予 platform.* 能力。禁止任何人给自己增加授权。授权修订号冲突返回 409。每个管理员最多 1000 条有效授权。重复请求重新授权后返回原结果。
 	//
 	// Returns a wrapper object for the known response body format(s).
 	GrantAdminRoleWithBodyWithResponse(ctx context.Context, subject string, params *GrantAdminRoleParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*GrantAdminRoleResponse, error)
@@ -1069,7 +1094,7 @@ type ClientWithResponsesInterface interface {
 	// GrantAdminRoleWithResponse performs a PUT /api/v1/platform/admin/administrators/{subject}/grants (the `GrantAdminRole` operationId) request.
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
-	// 能力与三个范围维度分别检查。禁止给自己增加授权；只有可信平台管理员可授予 platform.* 能力。授权修订号冲突返回 409。每个管理员最多 1000 条有效授权。重复请求在重新授权后返回原结果。
+	// 可信平台管理员可授予任意能力及任意范围，包含敏感能力；普通管理员只能委托自己持有的能力与范围，不能授予 platform.* 能力。禁止任何人给自己增加授权。授权修订号冲突返回 409。每个管理员最多 1000 条有效授权。重复请求重新授权后返回原结果。
 	GrantAdminRoleWithResponse(ctx context.Context, subject string, params *GrantAdminRoleParams, body GrantAdminRoleJSONRequestBody, reqEditors ...RequestEditorFn) (*GrantAdminRoleResponse, error)
 
 	// ListPlatformOperationsWithResponse performs a GET /api/v1/platform/admin/operations (the `ListPlatformOperations` operationId) request.
@@ -1691,7 +1716,7 @@ func (r GetAdminRoleResponse) ContentType() string {
 
 // GetAdminEffectiveWithResponse performs a GET /api/v1/platform/admin/administrators/{subject}/effective (the `GetAdminEffective` operationId) request.
 //
-// 返回查询范围内的显式授权；角色包含查询范围时将范围收窄。查询他人需要该范围的 platform.authorization.read。修订号属于整个管理员授权集合。可信平台管理员的管理权由身份接口单独提供，不伪造为角色。
+// 先检查查询者权限，再从可信身份接口读取被查询者的当前平台管理员身份。平台管理员返回 authorization_mode=platform_admin_all，表示全部能力及全部范围（含敏感能力）；其他管理员返回 explicit_grants 及查询范围内显式授权。查询他人需要该范围的 platform.authorization.read。修订号仅表示显式授权集合，不代表身份修订，客户端不能据此缓存平台管理员身份。
 //
 // Returns a wrapper object for the known response body format(s).
 func (c *ClientWithResponses) GetAdminEffectiveWithResponse(ctx context.Context, subject string, params *GetAdminEffectiveParams, reqEditors ...RequestEditorFn) (*GetAdminEffectiveResponse, error) {
@@ -1705,7 +1730,7 @@ func (c *ClientWithResponses) GetAdminEffectiveWithResponse(ctx context.Context,
 // RevokeAdminRoleWithBodyWithResponse performs a DELETE /api/v1/platform/admin/administrators/{subject}/grants (the `RevokeAdminRole` operationId) request,
 // with any type of body and a specified content type.
 //
-// 能力与三个范围维度分别检查。禁止给自己增加授权；只有可信平台管理员可授予 platform.* 能力。授权修订号冲突返回 409。每个管理员最多 1000 条有效授权。重复请求在重新授权后返回原结果。
+// 可信平台管理员可授予任意能力及任意范围，包含敏感能力；普通管理员只能委托自己持有的能力与范围，不能授予 platform.* 能力。禁止任何人给自己增加授权。授权修订号冲突返回 409。每个管理员最多 1000 条有效授权。重复请求重新授权后返回原结果。
 //
 // Returns a wrapper object for the known response body format(s).
 func (c *ClientWithResponses) RevokeAdminRoleWithBodyWithResponse(ctx context.Context, subject string, params *RevokeAdminRoleParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RevokeAdminRoleResponse, error) {
@@ -1719,7 +1744,7 @@ func (c *ClientWithResponses) RevokeAdminRoleWithBodyWithResponse(ctx context.Co
 // RevokeAdminRoleWithResponse performs a DELETE /api/v1/platform/admin/administrators/{subject}/grants (the `RevokeAdminRole` operationId) request.
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
-// 能力与三个范围维度分别检查。禁止给自己增加授权；只有可信平台管理员可授予 platform.* 能力。授权修订号冲突返回 409。每个管理员最多 1000 条有效授权。重复请求在重新授权后返回原结果。
+// 可信平台管理员可授予任意能力及任意范围，包含敏感能力；普通管理员只能委托自己持有的能力与范围，不能授予 platform.* 能力。禁止任何人给自己增加授权。授权修订号冲突返回 409。每个管理员最多 1000 条有效授权。重复请求重新授权后返回原结果。
 func (c *ClientWithResponses) RevokeAdminRoleWithResponse(ctx context.Context, subject string, params *RevokeAdminRoleParams, body RevokeAdminRoleJSONRequestBody, reqEditors ...RequestEditorFn) (*RevokeAdminRoleResponse, error) {
 	rsp, err := c.RevokeAdminRole(ctx, subject, params, body, reqEditors...)
 	if err != nil {
@@ -1731,7 +1756,7 @@ func (c *ClientWithResponses) RevokeAdminRoleWithResponse(ctx context.Context, s
 // GrantAdminRoleWithBodyWithResponse performs a PUT /api/v1/platform/admin/administrators/{subject}/grants (the `GrantAdminRole` operationId) request,
 // with any type of body and a specified content type.
 //
-// 能力与三个范围维度分别检查。禁止给自己增加授权；只有可信平台管理员可授予 platform.* 能力。授权修订号冲突返回 409。每个管理员最多 1000 条有效授权。重复请求在重新授权后返回原结果。
+// 可信平台管理员可授予任意能力及任意范围，包含敏感能力；普通管理员只能委托自己持有的能力与范围，不能授予 platform.* 能力。禁止任何人给自己增加授权。授权修订号冲突返回 409。每个管理员最多 1000 条有效授权。重复请求重新授权后返回原结果。
 //
 // Returns a wrapper object for the known response body format(s).
 func (c *ClientWithResponses) GrantAdminRoleWithBodyWithResponse(ctx context.Context, subject string, params *GrantAdminRoleParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*GrantAdminRoleResponse, error) {
@@ -1745,7 +1770,7 @@ func (c *ClientWithResponses) GrantAdminRoleWithBodyWithResponse(ctx context.Con
 // GrantAdminRoleWithResponse performs a PUT /api/v1/platform/admin/administrators/{subject}/grants (the `GrantAdminRole` operationId) request.
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
-// 能力与三个范围维度分别检查。禁止给自己增加授权；只有可信平台管理员可授予 platform.* 能力。授权修订号冲突返回 409。每个管理员最多 1000 条有效授权。重复请求在重新授权后返回原结果。
+// 可信平台管理员可授予任意能力及任意范围，包含敏感能力；普通管理员只能委托自己持有的能力与范围，不能授予 platform.* 能力。禁止任何人给自己增加授权。授权修订号冲突返回 409。每个管理员最多 1000 条有效授权。重复请求重新授权后返回原结果。
 func (c *ClientWithResponses) GrantAdminRoleWithResponse(ctx context.Context, subject string, params *GrantAdminRoleParams, body GrantAdminRoleJSONRequestBody, reqEditors ...RequestEditorFn) (*GrantAdminRoleResponse, error) {
 	rsp, err := c.GrantAdminRole(ctx, subject, params, body, reqEditors...)
 	if err != nil {

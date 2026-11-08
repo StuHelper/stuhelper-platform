@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "StuHelper platform administration",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "description": "platform 管理授权与跨模块操作记录汇总。原始审计由各模块拥有；只返回脱敏摘要，不包含认证材料或交易载荷。"
   },
   "paths": {
@@ -297,7 +297,7 @@
     "/api/v1/platform/admin/administrators/{subject}/grants": {
       "put": {
         "operationId": "grantAdminRole",
-        "description": "能力与三个范围维度分别检查。禁止给自己增加授权；只有可信平台管理员可授予 platform.* 能力。授权修订号冲突返回 409。每个管理员最多 1000 条有效授权。重复请求在重新授权后返回原结果。",
+        "description": "可信平台管理员可授予任意能力及任意范围，包含敏感能力；普通管理员只能委托自己持有的能力与范围，不能授予 platform.* 能力。禁止任何人给自己增加授权。授权修订号冲突返回 409。每个管理员最多 1000 条有效授权。重复请求重新授权后返回原结果。",
         "security": [
           {
             "session": []
@@ -410,7 +410,7 @@
       },
       "delete": {
         "operationId": "revokeAdminRole",
-        "description": "能力与三个范围维度分别检查。禁止给自己增加授权；只有可信平台管理员可授予 platform.* 能力。授权修订号冲突返回 409。每个管理员最多 1000 条有效授权。重复请求在重新授权后返回原结果。",
+        "description": "可信平台管理员可授予任意能力及任意范围，包含敏感能力；普通管理员只能委托自己持有的能力与范围，不能授予 platform.* 能力。禁止任何人给自己增加授权。授权修订号冲突返回 409。每个管理员最多 1000 条有效授权。重复请求重新授权后返回原结果。",
         "security": [
           {
             "session": []
@@ -525,7 +525,7 @@
     "/api/v1/platform/admin/administrators/{subject}/effective": {
       "get": {
         "operationId": "getAdminEffective",
-        "description": "返回查询范围内的显式授权；角色包含查询范围时将范围收窄。查询他人需要该范围的 platform.authorization.read。修订号属于整个管理员授权集合。可信平台管理员的管理权由身份接口单独提供，不伪造为角色。",
+        "description": "先检查查询者权限，再从可信身份接口读取被查询者的当前平台管理员身份。平台管理员返回 authorization_mode=platform_admin_all，表示全部能力及全部范围（含敏感能力）；其他管理员返回 explicit_grants 及查询范围内显式授权。查询他人需要该范围的 platform.authorization.read。修订号仅表示显式授权集合，不代表身份修订，客户端不能据此缓存平台管理员身份。",
         "security": [
           {
             "session": []
@@ -967,13 +967,23 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/AdminGrant"
-            }
+            },
+            "description": "查询范围内的显式授权记录；平台管理员的全部能力由 authorization_mode 表示，不创建虚假角色授权。"
+          },
+          "authorization_mode": {
+            "type": "string",
+            "enum": [
+              "platform_admin_all",
+              "explicit_grants"
+            ],
+            "description": "platform_admin_all 表示被查询者是可信平台管理员，自动拥有任意能力及任意范围（含敏感能力）；explicit_grants 表示按 grants 显式授权。不得用 grants 是否为空判断平台管理员权限。"
           }
         },
         "required": [
           "subject",
           "revision",
-          "grants"
+          "grants",
+          "authorization_mode"
         ]
       },
       "AdminMutation": {

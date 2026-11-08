@@ -45,9 +45,8 @@ func (s Service) identity(ctx context.Context, p account.Principal) (bool, error
 	return b, nil
 }
 func allowed(ctx context.Context, st Store, p account.Principal, platform bool, cap string, scope Scope) error {
-	// Platform identity bootstraps only administration of platform itself. It does
-	// not implicitly grant sensitive business capabilities such as refunds.
-	if platform && strings.HasPrefix(cap, "platform.") {
+	// Trusted platform identity grants all capabilities and object scopes.
+	if platform {
 		return nil
 	}
 	effective, e := st.Effective(ctx, p.Key())
@@ -64,7 +63,8 @@ func allowed(ctx context.Context, st Store, p account.Principal, platform bool, 
 
 // Evaluate accepts an authenticated, trusted principal and the object's actual
 // scope supplied by the owning service. No identity or scope comes from a client flag.
-// Every call reads current grants. Changes committed before the call are visible.
+// Every call checks current identity. Non-platform administrators also read current
+// grants; trusted platform administrators need no explicit grant for any capability.
 func (s Service) Evaluate(ctx context.Context, p account.Principal, cap string, scope Scope) error {
 	if !identifier.MatchString(cap) || !strings.Contains(cap, ".") || !scope.Valid() {
 		return ErrInvalid
@@ -75,7 +75,10 @@ func (s Service) Evaluate(ctx context.Context, p account.Principal, cap string, 
 	if e != nil {
 		return e
 	}
-	return s.Repo.View(ctx, func(st Store) error { return allowed(ctx, st, p, platform, cap, scope) })
+	if platform {
+		return nil
+	}
+	return s.Repo.View(ctx, func(st Store) error { return allowed(ctx, st, p, false, cap, scope) })
 }
 func (s Service) Role(ctx context.Context, p account.Principal, id string) (out Role, err error) {
 	if !identifier.MatchString(id) {
@@ -98,7 +101,8 @@ func (s Service) Role(ctx context.Context, p account.Principal, id string) (out 
 	return
 }
 func (s Service) Effective(ctx context.Context, p account.Principal, subject string, scope Scope) (out Effective, err error) {
-	if _, e := account.Parse(subject); e != nil || !scope.Valid() {
+	target, parseErr := account.Parse(subject)
+	if parseErr != nil || !scope.Valid() {
 		return out, ErrInvalid
 	}
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
@@ -117,7 +121,19 @@ func (s Service) Effective(ctx context.Context, p account.Principal, subject str
 		if e != nil {
 			return e
 		}
-		out = Effective{subject, all.Revision, []Grant{}}
+		// The queried account's identity, rather than the caller's, determines
+		// the effective authorization mode. Do not query it before permission checks.
+		targetPlatform := platform
+		if p.Key() != subject {
+			targetPlatform, e = s.identity(ctx, target)
+			if e != nil {
+				return e
+			}
+		}
+		out = Effective{Subject: subject, Revision: all.Revision, Grants: []Grant{}, AuthorizationMode: ExplicitGrants}
+		if targetPlatform {
+			out.AuthorizationMode = PlatformAdminAll
+		}
 		for _, g := range all.Grants {
 			if intersection, ok := g.Scope.Intersection(scope); ok {
 				g.Scope = intersection

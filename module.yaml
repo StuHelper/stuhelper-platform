@@ -33,3 +33,6 @@ scenario_tests:
     - postgres/audit_test.go#TestAuditPartialResultsStayMarkedAndRejectBadProvider
     - postgres/audit_test.go#TestPlatformAuditSnapshotExcludesDelayedCommitAndDetectsRetention
     - postgres/audit_test.go#TestAuditHTTPGeneratedClientPartialResponse
+  PLAT-ADMIN-ALL-01:
+    - postgres/admin_platform_test.go#TestPlatformAdministratorAllCapabilitiesAndDelegation
+    - postgres/admin_platform_test.go#TestPlatformEffectiveModeUsesCurrentTargetIdentity

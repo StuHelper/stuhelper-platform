@@ -66,10 +66,18 @@ type Grant struct {
 	Role  Role  `json:"role"`
 	Scope Scope `json:"scope"`
 }
+type AuthorizationMode string
+
+const (
+	PlatformAdminAll AuthorizationMode = "platform_admin_all"
+	ExplicitGrants   AuthorizationMode = "explicit_grants"
+)
+
 type Effective struct {
-	Subject  string  `json:"subject"`
-	Revision string  `json:"revision"`
-	Grants   []Grant `json:"grants"`
+	AuthorizationMode AuthorizationMode `json:"authorization_mode"`
+	Subject           string            `json:"subject"`
+	Revision          string            `json:"revision"`
+	Grants            []Grant           `json:"grants"`
 }
 type Mutation struct {
 	RoleID           string `json:"role_id"`
