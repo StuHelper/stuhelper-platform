@@ -47,7 +47,7 @@ func setup(t *testing.T) (*p.Repository, *sql.DB) {
 			t.Fatal(err)
 		}
 	}
-	if _, err = owner.Exec(`CREATE ROLE ` + role + ` LOGIN;REVOKE ALL ON SCHEMA public FROM PUBLIC;GRANT USAGE ON SCHEMA platform TO ` + role + `;GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA platform TO ` + role + `;GRANT USAGE ON ALL SEQUENCES IN SCHEMA platform TO ` + role + `;REVOKE UPDATE ON platform.audit,platform.eligibility_requests FROM ` + role + `;CREATE SCHEMA foreign_data;CREATE TABLE foreign_data.secret(value text);`); err != nil {
+	if _, err = owner.Exec(`CREATE ROLE ` + role + ` LOGIN;REVOKE ALL ON SCHEMA public FROM PUBLIC;GRANT USAGE ON SCHEMA platform TO ` + role + `;GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA platform TO ` + role + `;GRANT USAGE ON ALL SEQUENCES IN SCHEMA platform TO ` + role + `;REVOKE UPDATE,DELETE ON platform.admin_roles FROM ` + role + `;REVOKE UPDATE ON platform.audit,platform.eligibility_requests,platform.admin_requests FROM ` + role + `;CREATE SCHEMA foreign_data;CREATE TABLE foreign_data.secret(value text);`); err != nil {
 		t.Fatal(err)
 	}
 	runtime, err := sql.Open("pgx", dsn+" dbname="+name+" user="+role)

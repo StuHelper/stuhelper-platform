@@ -73,7 +73,7 @@ func (r *Repository) record(ctx context.Context, names []string, state h.State) 
 		if _, err = tx.ExecContext(call, `INSERT INTO platform.installations VALUES($1,$2) ON CONFLICT(module) DO UPDATE SET state=EXCLUDED.state`, name, state); err != nil {
 			return h.ErrUnavailable
 		}
-		if _, err = tx.ExecContext(call, `INSERT INTO platform.audit(actor,action,target,data,created_at) VALUES('deployment','installation.record',$1,jsonb_build_object('state',$2::text),now())`, name, state); err != nil {
+		if _, err = tx.ExecContext(call, `INSERT INTO platform.audit(actor,action,target,data,created_at,module) VALUES('deployment','installation.record',$1,jsonb_build_object('state',$2::text),now(),'platform')`, name, state); err != nil {
 			return h.ErrUnavailable
 		}
 	}

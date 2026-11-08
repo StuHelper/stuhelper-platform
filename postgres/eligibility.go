@@ -82,7 +82,7 @@ func (r *Repository) Apply(ctx context.Context, in e.Update) (e.Rule, error) {
 		{`UPDATE platform.configuration SET revision=revision+1 WHERE singleton`, nil},
 		{`INSERT INTO platform.eligibility_rules VALUES($1,$2,$3) ON CONFLICT(school,action) DO UPDATE SET conditions=EXCLUDED.conditions`, []any{in.School, in.Action, conditions}},
 		{`INSERT INTO platform.eligibility_requests VALUES($1,$2,$3,$4,$5)`, []any{in.Actor, in.Key, digest, result, in.At}},
-		{`INSERT INTO platform.audit(actor,action,target,data,created_at) VALUES($1,'eligibility.set',$2,$3,$4)`, []any{in.Actor, in.School + ":" + in.Action, result, in.At}},
+		{`INSERT INTO platform.audit(actor,action,target,data,created_at,school,module) VALUES($1,'eligibility.set',$2,$3,$4,$5,'platform')`, []any{in.Actor, in.School + ":" + in.Action, result, in.At, in.School}},
 	} {
 		if _, err = tx.ExecContext(call, statement.query, statement.args...); err != nil {
 			return e.Rule{}, unavailable(err)

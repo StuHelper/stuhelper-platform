@@ -44,6 +44,13 @@ make check-generated
 modulehistory 提供独立于启用状态的安装事实接口。PostgreSQL 的 platform schema 保存资格规则、安装历史、幂等响应和独立审计。初始化只记录经核实从未安装的模块，不能覆盖已有事实；安装记录单向更新。记录缺失或数据库故障时按未知处理。
 资格规则缓存最长 5 秒、最多 4,096 项。本进程修改后立即失效，包括提交结果不明的失败；其他实例在 5 秒内失效。过期缓存读取失败时返回不可用，不使用旧值。安装历史每次读取数据库，不缓存从未安装状态。
 
-审计独立保存 12 个月，幂等响应保存 24 小时。Cleanup 每轮最多删除 100 条审计和 100 条响应，限时 5 秒；配置更新不受历史条数限制。当前配置和安装事实随部署数据保存。
+审计独立保存 12 个月，幂等响应保存 24 小时。Cleanup 每轮最多删除 100 条审计、100 条资格响应和 100 条授权响应，限时 5 秒；配置更新不受历史条数限制。当前配置和安装事实随部署数据保存。
 
-运行身份只获得 platform schema 的 USAGE、表 SELECT/INSERT/UPDATE/DELETE 和序列 USAGE；audit 与 eligibility_requests 禁止 UPDATE。迁移身份单独管理。make check 必须提供隔离的 STUHELPER_PLATFORM_TEST_DSN，CI 自动创建临时 PostgreSQL 集群。
+运行身份只获得 platform schema 的 USAGE、表 SELECT/INSERT/UPDATE/DELETE 和序列 USAGE；audit、eligibility_requests 与 admin_requests 禁止 UPDATE，admin_roles 禁止 UPDATE 和 DELETE。迁移身份单独管理。make check 必须提供隔离的 STUHELPER_PLATFORM_TEST_DSN，CI 自动创建临时 PostgreSQL 集群。
+
+
+## 管理角色与操作记录
+
+admin 提供不可变角色定义、学校／群／业务模块授权、即时授权求值和平台自身操作记录查询。接口为 contracts/admin.openapi.json，公开求值入口为 admin.Service.Evaluate。角色模板不自动授予能力，操作记录仅包含 platform 记录。
+
+宿主通过 admin/httpapi.Handler.Register 装配路由，并提供当前身份及会话／CSRF 校验。公开示例未装配管理员身份。权限、数据库配置、AO 场景及 backend 后续接入步骤见[管理角色实现说明](docs/admin-operations.md)。

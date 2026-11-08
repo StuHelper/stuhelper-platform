@@ -8,8 +8,8 @@ const base = process.env.CONTRACT_BASE_REF || 'HEAD';
 try {
   const initial = /^0+$/.test(base);
   if (!initial) execFileSync('git', ['rev-parse', '--verify', `${base}^{commit}`], { stdio: 'ignore' });
-  for (const name of ['platform', 'module']) {
-    const file = `contracts/${name}.openapi.yaml`;
+  for (const name of ['platform', 'module', 'admin']) {
+    const file = `contracts/${name}.openapi.${name === 'admin' ? 'json' : 'yaml'}`;
     execFileSync('go', [...tool, 'validate', file, '--allow-external-refs=false', '--fail-on', 'WARN'], { stdio: 'inherit' });
     if (initial) continue;
     const previous = spawnSync('git', ['show', `${base}:${file}`], { encoding: 'utf8' });
