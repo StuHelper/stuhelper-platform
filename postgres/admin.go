@@ -177,24 +177,7 @@ func (s adminStore) SaveReplay(ctx context.Context, actor, key, hash string, b [
 	_, e := s.tx.ExecContext(ctx, `INSERT INTO platform.admin_requests(actor,key,digest,result,created_at) VALUES($1,$2,$3,$4,$5)`, actor, key, hash, b, at)
 	return adminError(e)
 }
-func (s adminStore) Operations(ctx context.Context, f a.Filter, before int64) ([]a.Record, error) {
-	rows, e := s.tx.QueryContext(ctx, `SELECT id,actor,action,target,school,group_id,module,reason,result,created_at,COALESCE(data->>'role_id',''),COALESCE(data->>'revision','') FROM platform.audit WHERE ($1='*' OR school=$1) AND ($2='*' OR group_id=$2) AND ($3='*' OR module=$3) AND ($4='' OR target=$4) AND ($5='' OR actor=$5) AND ($6='' OR action=$6) AND ($7::timestamptz IS NULL OR created_at >= $7) AND ($8::timestamptz IS NULL OR created_at < $8) AND ($9::bigint=0 OR id<$9) ORDER BY id DESC LIMIT $10`, f.Scope.School, f.Scope.Group, f.Scope.Module, f.Target, f.Actor, f.Action, nullableTime(f.From), nullableTime(f.Until), before, f.Limit+1)
-	if e != nil {
-		return nil, adminError(e)
-	}
-	defer rows.Close()
-	out := []a.Record{}
-	for rows.Next() {
-		r := a.Record{Source: "platform"}
-		var id int64
-		if e = rows.Scan(&id, &r.Actor, &r.Action, &r.Target, &r.Scope.School, &r.Scope.Group, &r.Scope.Module, &r.Reason, &r.Result, &r.CreatedAt, &r.RoleID, &r.Revision); e != nil {
-			return nil, adminError(e)
-		}
-		r.ID = strconv.FormatInt(id, 10)
-		out = append(out, r)
-	}
-	return out, adminError(rows.Err())
-}
+
 func nullableTime(t time.Time) any {
 	if t.IsZero() {
 		return nil

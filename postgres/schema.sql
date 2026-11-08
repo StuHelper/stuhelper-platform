@@ -25,3 +25,9 @@ CREATE INDEX IF NOT EXISTS platform_audit_actor ON platform.audit(actor,id DESC)
 CREATE INDEX IF NOT EXISTS platform_audit_target ON platform.audit(target,id DESC);
 CREATE INDEX IF NOT EXISTS platform_audit_action ON platform.audit(action,id DESC);
 REVOKE ALL ON ALL TABLES IN SCHEMA platform FROM PUBLIC;
+
+ALTER TABLE platform.audit ADD COLUMN IF NOT EXISTS recorded_xid xid8 NOT NULL DEFAULT pg_current_xact_id();
+CREATE TABLE IF NOT EXISTS platform.audit_retention(singleton boolean PRIMARY KEY CHECK(singleton),revision bigint NOT NULL);
+INSERT INTO platform.audit_retention VALUES(true,1) ON CONFLICT DO NOTHING;
+CREATE INDEX IF NOT EXISTS platform_audit_merge ON platform.audit(created_at DESC,(id::text) COLLATE "C" DESC);
+REVOKE ALL ON ALL TABLES IN SCHEMA platform FROM PUBLIC;

@@ -3,7 +3,6 @@ package admin
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -16,9 +15,11 @@ import (
 )
 
 type Service struct {
-	Repo     Repository
-	Identity Identity
-	Now      func() time.Time
+	// AuditProviders is an immutable host registry; a nil provider is configured but unavailable.
+	AuditProviders map[string]AuditProvider
+	Repo           Repository
+	Identity       Identity
+	Now            func() time.Time
 }
 
 func (s Service) now() time.Time {
@@ -225,68 +226,6 @@ func (s Service) Change(ctx context.Context, p account.Principal, subject, key s
 		}
 		b, _ = json.Marshal(out)
 		return st.SaveReplay(ctx, p.Key(), key, hash, b, at)
-	})
-	return
-}
-
-type cursor struct {
-	Before int64
-	Filter string
-}
-
-func (s Service) Operations(ctx context.Context, p account.Principal, f Filter) (out Page, err error) {
-	out = Page{Source: "platform", Items: []Record{}}
-	if !f.Scope.Valid() || f.Limit < 1 || f.Limit > 100 || len(f.Cursor) > 2048 {
-		return out, ErrInvalid
-	}
-	for _, v := range []struct {
-		s string
-		n int
-	}{{f.Actor, 2048}, {f.Target, 2048}, {f.Action, 128}} {
-		if v.s != "" && !clean(v.s, v.n) {
-			return out, ErrInvalid
-		}
-	}
-	if !f.From.IsZero() && !f.Until.IsZero() && !f.From.Before(f.Until) {
-		return out, ErrInvalid
-	}
-	canonical := f
-	canonical.Cursor = ""
-	hash := digest(canonical)
-	before := int64(0)
-	if f.Cursor != "" {
-		raw, e := base64.RawURLEncoding.DecodeString(f.Cursor)
-		var c cursor
-		if e != nil || json.Unmarshal(raw, &c) != nil || c.Before <= 0 || c.Filter != hash {
-			return out, ErrInvalid
-		}
-		before = c.Before
-	}
-	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
-	defer cancel()
-	platform, err := s.identity(ctx, p)
-	if err != nil {
-		return out, err
-	}
-	err = s.Repo.View(ctx, func(st Store) error {
-		if e := allowed(ctx, st, p, platform, "platform.audit.read", f.Scope); e != nil {
-			return e
-		}
-		rows, e := st.Operations(ctx, f, before)
-		if e != nil {
-			return e
-		}
-		if len(rows) > f.Limit {
-			rows = rows[:f.Limit]
-			id, e := strconv.ParseInt(rows[len(rows)-1].ID, 10, 64)
-			if e != nil {
-				return ErrUnavailable
-			}
-			b, _ := json.Marshal(cursor{id, hash})
-			out.NextCursor = base64.RawURLEncoding.EncodeToString(b)
-		}
-		out.Items = rows
-		return nil
 	})
 	return
 }

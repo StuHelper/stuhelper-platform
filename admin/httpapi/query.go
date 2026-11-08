@@ -15,7 +15,7 @@ func parseQuery(r *http.Request) (url.Values, error) {
 	}
 	allowed := []string{}
 	if r.URL.Path == "/api/v1/platform/admin/operations" {
-		allowed = []string{"school", "group", "module", "actor", "target", "action", "from", "until", "cursor", "limit"}
+		allowed = []string{"school", "group", "module", "actor", "target", "action", "from", "until", "cursor", "limit", "sources"}
 	} else if r.PathValue("subject") != "" && r.Method == "GET" {
 		allowed = []string{"school", "group", "module"}
 	}

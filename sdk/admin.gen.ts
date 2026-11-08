@@ -97,7 +97,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description 仅包含 platform 记录：授权变更、资格配置、安装记录及角色定义。按 ID 降序，时间区间 [from, until)，游标绑定筛选条件。必须具有查询范围的 platform.audit.read；历史无范围记录仅全局可见。原因为空表示旧记录未采集，result 为已提交成功。 */
+        /** @description 按当前有效授权范围向已装配提供方读取并合并审计，时间、来源模块、记录 ID 均按降序排序。每页重新授权；游标绑定操作者、筛选条件、权限范围和提供方集合，并保留各提供方的快照。提供方失败返回部分结果及 missing_modules；缺失在同一分页过程中持续标记，恢复后须重新查询。默认查询全部已装配且获准的来源。旧版本游标不接受。 */
         get: operations["listPlatformOperations"];
         put?: never;
         post?: never;
@@ -148,15 +148,16 @@ export interface components {
         };
         AdminAudit: {
             id: string;
-            /** @enum {string} */
-            source: "platform";
+            /** @description 原始审计所属业务模块标识。 */
+            source: string;
             actor: string;
             action: string;
             target: string;
             scope: components["schemas"]["AdminScope"];
+            /** @description 脱敏原因或原因码；原始记录未采集时为空。 */
             reason: string;
-            /** @enum {string} */
-            result: "success";
+            /** @description success、denied、failed 或 unknown；不能从缺失字段推测成功。 */
+            result: string;
             /** Format: date-time */
             created_at: string;
             /** @description 角色授予或撤销时的角色 ID。 */
@@ -166,12 +167,17 @@ export interface components {
         };
         AdminAuditPage: {
             /**
-             * @description 仅包含 platform 记录，不包含其他业务模块审计。
+             * @description 汇总查询由 platform 提供，单条记录 source 标识原始模块。
              * @enum {string}
              */
             source: "platform";
             items: components["schemas"]["AdminAudit"][];
             next_cursor: string;
+            /** @description 当前分页过程存在提供方缺失。 */
+            partial: boolean;
+            missing_modules: string[];
+            /** @description 当前有效授权允许查询的已装配模块。 */
+            queried_modules: string[];
         };
         AdminError: {
             /** @enum {string} */
@@ -673,6 +679,8 @@ export interface operations {
                 until?: string;
                 cursor?: string;
                 limit?: number;
+                /** @description 按原始审计所属模块筛选，逗号分隔；与 module（对象授权范围）分别检查。未装配或不在注册清单的模块返回 400。 */
+                sources?: string[];
             };
             header?: never;
             path?: never;

@@ -17,45 +17,15 @@ import (
 	"github.com/oapi-codegen/runtime"
 )
 
-// Defines values for AdminAuditResult.
-const (
-	Success AdminAuditResult = "success"
-)
-
-// Valid indicates whether the value is a known member of the AdminAuditResult enum.
-func (e AdminAuditResult) Valid() bool {
-	switch e {
-	case Success:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for AdminAuditSource.
-const (
-	AdminAuditSourcePlatform AdminAuditSource = "platform"
-)
-
-// Valid indicates whether the value is a known member of the AdminAuditSource enum.
-func (e AdminAuditSource) Valid() bool {
-	switch e {
-	case AdminAuditSourcePlatform:
-		return true
-	default:
-		return false
-	}
-}
-
 // Defines values for AdminAuditPageSource.
 const (
-	AdminAuditPageSourcePlatform AdminAuditPageSource = "platform"
+	Platform AdminAuditPageSource = "platform"
 )
 
 // Valid indicates whether the value is a known member of the AdminAuditPageSource enum.
 func (e AdminAuditPageSource) Valid() bool {
 	switch e {
-	case AdminAuditPageSourcePlatform:
+	case Platform:
 		return true
 	default:
 		return false
@@ -94,39 +64,46 @@ func (e AdminErrorCode) Valid() bool {
 
 // AdminAudit defines model for AdminAudit.
 type AdminAudit struct {
-	Action    string           `json:"action"`
-	Actor     string           `json:"actor"`
-	CreatedAt time.Time        `json:"created_at"`
-	Id        string           `json:"id"`
-	Reason    string           `json:"reason"`
-	Result    AdminAuditResult `json:"result"`
+	Action    string    `json:"action"`
+	Actor     string    `json:"actor"`
+	CreatedAt time.Time `json:"created_at"`
+	Id        string    `json:"id"`
+
+	// Reason 脱敏原因或原因码；原始记录未采集时为空。
+	Reason string `json:"reason"`
+
+	// Result success、denied、failed 或 unknown；不能从缺失字段推测成功。
+	Result string `json:"result"`
 
 	// Revision 授权变更后的修订号。
 	Revision *string `json:"revision,omitempty"`
 
 	// RoleId 角色授予或撤销时的角色 ID。
-	RoleId *string          `json:"role_id,omitempty"`
-	Scope  AdminScope       `json:"scope"`
-	Source AdminAuditSource `json:"source"`
-	Target string           `json:"target"`
+	RoleId *string    `json:"role_id,omitempty"`
+	Scope  AdminScope `json:"scope"`
+
+	// Source 原始审计所属业务模块标识。
+	Source string `json:"source"`
+	Target string `json:"target"`
 }
-
-// AdminAuditResult defines model for AdminAudit.Result.
-type AdminAuditResult string
-
-// AdminAuditSource defines model for AdminAudit.Source.
-type AdminAuditSource string
 
 // AdminAuditPage defines model for AdminAuditPage.
 type AdminAuditPage struct {
-	Items      []AdminAudit `json:"items"`
-	NextCursor string       `json:"next_cursor"`
+	Items          []AdminAudit `json:"items"`
+	MissingModules []string     `json:"missing_modules"`
+	NextCursor     string       `json:"next_cursor"`
 
-	// Source 仅包含 platform 记录，不包含其他业务模块审计。
+	// Partial 当前分页过程存在提供方缺失。
+	Partial bool `json:"partial"`
+
+	// QueriedModules 当前有效授权允许查询的已装配模块。
+	QueriedModules []string `json:"queried_modules"`
+
+	// Source 汇总查询由 platform 提供，单条记录 source 标识原始模块。
 	Source AdminAuditPageSource `json:"source"`
 }
 
-// AdminAuditPageSource 仅包含 platform 记录，不包含其他业务模块审计。
+// AdminAuditPageSource 汇总查询由 platform 提供，单条记录 source 标识原始模块。
 type AdminAuditPageSource string
 
 // AdminEffective defines model for AdminEffective.
@@ -217,6 +194,9 @@ type ListPlatformOperationsParams struct {
 	Until  *time.Time `form:"until,omitempty" json:"until,omitempty"`
 	Cursor *string    `form:"cursor,omitempty" json:"cursor,omitempty"`
 	Limit  *int       `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Sources 按原始审计所属模块筛选，逗号分隔；与 module（对象授权范围）分别检查。未装配或不在注册清单的模块返回 400。
+	Sources *[]string `form:"sources,omitempty" json:"sources,omitempty"`
 }
 
 // CreateAdminRoleParams defines parameters for CreateAdminRole.
@@ -338,7 +318,7 @@ type ClientInterface interface {
 
 	// ListPlatformOperations performs a GET /api/v1/platform/admin/operations (the `ListPlatformOperations` operationId) request.
 	//
-	// 仅包含 platform 记录：授权变更、资格配置、安装记录及角色定义。按 ID 降序，时间区间 [from, until)，游标绑定筛选条件。必须具有查询范围的 platform.audit.read；历史无范围记录仅全局可见。原因为空表示旧记录未采集，result 为已提交成功。
+	// 按当前有效授权范围向已装配提供方读取并合并审计，时间、来源模块、记录 ID 均按降序排序。每页重新授权；游标绑定操作者、筛选条件、权限范围和提供方集合，并保留各提供方的快照。提供方失败返回部分结果及 missing_modules；缺失在同一分页过程中持续标记，恢复后须重新查询。默认查询全部已装配且获准的来源。旧版本游标不接受。.
 	ListPlatformOperations(ctx context.Context, params *ListPlatformOperationsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListAdminRoleTemplates performs a GET /api/v1/platform/admin/role-templates (the `ListAdminRoleTemplates` operationId) request.
@@ -445,7 +425,7 @@ func (c *Client) GrantAdminRole(ctx context.Context, subject string, params *Gra
 
 // ListPlatformOperations performs a GET /api/v1/platform/admin/operations (the `ListPlatformOperations` operationId) request.
 //
-// 仅包含 platform 记录：授权变更、资格配置、安装记录及角色定义。按 ID 降序，时间区间 [from, until)，游标绑定筛选条件。必须具有查询范围的 platform.audit.read；历史无范围记录仅全局可见。原因为空表示旧记录未采集，result 为已提交成功。
+// 按当前有效授权范围向已装配提供方读取并合并审计，时间、来源模块、记录 ID 均按降序排序。每页重新授权；游标绑定操作者、筛选条件、权限范围和提供方集合，并保留各提供方的快照。提供方失败返回部分结果及 missing_modules；缺失在同一分页过程中持续标记，恢复后须重新查询。默认查询全部已装配且获准的来源。旧版本游标不接受。.
 func (c *Client) ListPlatformOperations(ctx context.Context, params *ListPlatformOperationsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListPlatformOperationsRequest(c.Server, params)
 	if err != nil {
@@ -873,6 +853,18 @@ func NewListPlatformOperationsRequest(server string, params *ListPlatformOperati
 
 		}
 
+		if params.Sources != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "sources", *params.Sources, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "array", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
 		if encoded := queryValues.Encode(); encoded != "" {
 			rawQueryFragments = append(rawQueryFragments, encoded)
 		}
@@ -1082,7 +1074,7 @@ type ClientWithResponsesInterface interface {
 
 	// ListPlatformOperationsWithResponse performs a GET /api/v1/platform/admin/operations (the `ListPlatformOperations` operationId) request.
 	//
-	// 仅包含 platform 记录：授权变更、资格配置、安装记录及角色定义。按 ID 降序，时间区间 [from, until)，游标绑定筛选条件。必须具有查询范围的 platform.audit.read；历史无范围记录仅全局可见。原因为空表示旧记录未采集，result 为已提交成功。
+	// 按当前有效授权范围向已装配提供方读取并合并审计，时间、来源模块、记录 ID 均按降序排序。每页重新授权；游标绑定操作者、筛选条件、权限范围和提供方集合，并保留各提供方的快照。提供方失败返回部分结果及 missing_modules；缺失在同一分页过程中持续标记，恢复后须重新查询。默认查询全部已装配且获准的来源。旧版本游标不接受。.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	ListPlatformOperationsWithResponse(ctx context.Context, params *ListPlatformOperationsParams, reqEditors ...RequestEditorFn) (*ListPlatformOperationsResponse, error)
@@ -1764,7 +1756,7 @@ func (c *ClientWithResponses) GrantAdminRoleWithResponse(ctx context.Context, su
 
 // ListPlatformOperationsWithResponse performs a GET /api/v1/platform/admin/operations (the `ListPlatformOperations` operationId) request.
 //
-// 仅包含 platform 记录：授权变更、资格配置、安装记录及角色定义。按 ID 降序，时间区间 [from, until)，游标绑定筛选条件。必须具有查询范围的 platform.audit.read；历史无范围记录仅全局可见。原因为空表示旧记录未采集，result 为已提交成功。
+// 按当前有效授权范围向已装配提供方读取并合并审计，时间、来源模块、记录 ID 均按降序排序。每页重新授权；游标绑定操作者、筛选条件、权限范围和提供方集合，并保留各提供方的快照。提供方失败返回部分结果及 missing_modules；缺失在同一分页过程中持续标记，恢复后须重新查询。默认查询全部已装配且获准的来源。旧版本游标不接受。.
 //
 // Returns a wrapper object for the known response body format(s).
 func (c *ClientWithResponses) ListPlatformOperationsWithResponse(ctx context.Context, params *ListPlatformOperationsParams, reqEditors ...RequestEditorFn) (*ListPlatformOperationsResponse, error) {

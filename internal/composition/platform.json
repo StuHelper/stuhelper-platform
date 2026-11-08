@@ -35,6 +35,13 @@
         "postgres/admin_test.go#TestAdminAtomicAuditFailureAndDatabaseIsolation",
         "postgres/admin_test.go#TestPlatformOperationsScopeFiltersCursorAndRevocation",
         "postgres/admin_test.go#TestAdminMigrationRetentionAndPageBound"
+      ],
+      "PLAT-AUDIT-01": [
+        "postgres/audit_test.go#TestAuditProvidersStableMergeAndSnapshot",
+        "postgres/audit_test.go#TestAuditProvidersAuthorizationBeforeReadAndRevokedPage",
+        "postgres/audit_test.go#TestAuditPartialResultsStayMarkedAndRejectBadProvider",
+        "postgres/audit_test.go#TestPlatformAuditSnapshotExcludesDelayedCommitAndDetectsRetention",
+        "postgres/audit_test.go#TestAuditHTTPGeneratedClientPartialResponse"
       ]
     }
   }

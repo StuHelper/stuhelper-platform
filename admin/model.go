@@ -94,11 +94,15 @@ type Record struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 type Page struct {
-	Source     string   `json:"source"`
-	Items      []Record `json:"items"`
-	NextCursor string   `json:"next_cursor"`
+	Partial        bool     `json:"partial"`
+	MissingModules []string `json:"missing_modules"`
+	QueriedModules []string `json:"queried_modules"`
+	Source         string   `json:"source"`
+	Items          []Record `json:"items"`
+	NextCursor     string   `json:"next_cursor"`
 }
 type Filter struct {
+	Sources               []string
 	Scope                 Scope
 	Target, Actor, Action string
 	From, Until           time.Time
@@ -120,7 +124,7 @@ type Store interface {
 	Record(context.Context, Record) error
 	Replay(context.Context, string, string, string) ([]byte, error)
 	SaveReplay(context.Context, string, string, string, []byte, time.Time) error
-	Operations(context.Context, Filter, int64) ([]Record, error)
+	ReadAudit(context.Context, AuditRequest) (AuditBatch, error)
 }
 type Repository interface {
 	// View provides one consistent, uncached authorization/query snapshot.

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/StuHelper/stuhelper-platform/account"
@@ -109,6 +110,9 @@ func (h Handler) serve(w http.ResponseWriter, r *http.Request) {
 		out, err = h.Service.Effective(r.Context(), p, r.PathValue("subject"), scope)
 	default:
 		f := a.Filter{Scope: scope, Actor: q.Get("actor"), Target: q.Get("target"), Action: q.Get("action"), Cursor: q.Get("cursor"), Limit: 50}
+		if q.Has("sources") {
+			f.Sources = strings.Split(q.Get("sources"), ",")
+		}
 		if q.Has("limit") {
 			f.Limit, err = strconv.Atoi(q.Get("limit"))
 		}
