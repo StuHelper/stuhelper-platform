@@ -54,3 +54,5 @@ modulehistory 提供独立于启用状态的安装事实接口。PostgreSQL 的 
 admin 提供不可变角色定义、学校／群／业务模块授权、即时授权求值和跨模块操作记录汇总查询。接口为 contracts/admin.openapi.json，公开求值入口为 admin.Service.Evaluate。角色模板不自动授予能力，platform 内置自身审计提供方，其他模块经公开接口接入；响应列出已查询和缺失模块。
 
 宿主通过 admin/httpapi.Handler.Register 装配路由，并提供当前身份及会话／CSRF 校验。公开示例未装配管理员身份。权限、数据库配置、AO 场景及 backend 后续接入步骤见[管理角色实现说明](docs/admin-operations.md)。
+
+资格动作 resources.purchase 与 membership.purchase 默认要求 campus_eligibility，登录由调用方已验证身份保证。两个动作独立配置全站规则与学校覆盖，购买条件调整不改变下载规则或既有权益。配置 API 的动作目录由 eligibility OpenAPI 0.2.0 与生成 SDK 描述。

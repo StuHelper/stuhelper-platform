@@ -16,6 +16,63 @@ import (
 	"github.com/oapi-codegen/runtime"
 )
 
+// Defines values for Action.
+const (
+	Bookmark                    Action = "bookmark"
+	ContentEnter                Action = "content.enter"
+	MembershipPurchase          Action = "membership.purchase"
+	PublishCourse               Action = "publish_course"
+	PublishMentor               Action = "publish_mentor"
+	ReadFull                    Action = "read_full"
+	Reply                       Action = "reply"
+	ReplyTeacher                Action = "reply_teacher"
+	Report                      Action = "report"
+	ResourcesDiscover           Action = "resources.discover"
+	ResourcesDownloadPublic     Action = "resources.download.public"
+	ResourcesDownloadRestricted Action = "resources.download.restricted"
+	ResourcesPurchase           Action = "resources.purchase"
+	ResourcesUpload             Action = "resources.upload"
+	Vote                        Action = "vote"
+)
+
+// Valid indicates whether the value is a known member of the Action enum.
+func (e Action) Valid() bool {
+	switch e {
+	case Bookmark:
+		return true
+	case ContentEnter:
+		return true
+	case MembershipPurchase:
+		return true
+	case PublishCourse:
+		return true
+	case PublishMentor:
+		return true
+	case ReadFull:
+		return true
+	case Reply:
+		return true
+	case ReplyTeacher:
+		return true
+	case Report:
+		return true
+	case ResourcesDiscover:
+		return true
+	case ResourcesDownloadPublic:
+		return true
+	case ResourcesDownloadRestricted:
+		return true
+	case ResourcesPurchase:
+		return true
+	case ResourcesUpload:
+		return true
+	case Vote:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ChangeConditions.
 const (
 	ChangeConditionsCampusEligibility ChangeConditions = "campus_eligibility"
@@ -69,6 +126,9 @@ func (e RuleConditions) Valid() bool {
 		return false
 	}
 }
+
+// Action 动作目录。resources.purchase 与 membership.purchase 默认要求 campus_eligibility；登录由调用方已验证身份保证。各动作独立支持全站规则与授权范围覆盖。
+type Action string
 
 // Change defines model for Change.
 type Change struct {
@@ -176,19 +236,19 @@ func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
 type ClientInterface interface {
 
 	// GetEligibilityRule performs a GET /api/v1/platform/eligibility/{school}/{action} (the `GetEligibilityRule` operationId) request.
-	GetEligibilityRule(ctx context.Context, school string, action string, reqEditors ...RequestEditorFn) (*http.Response, error)
+	GetEligibilityRule(ctx context.Context, school string, action Action, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// SetEligibilityRuleWithBody performs a PUT /api/v1/platform/eligibility/{school}/{action} (the `SetEligibilityRule` operationId) request,
 	// with any type of body and a specified content type.
-	SetEligibilityRuleWithBody(ctx context.Context, school string, action string, params *SetEligibilityRuleParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+	SetEligibilityRuleWithBody(ctx context.Context, school string, action Action, params *SetEligibilityRuleParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// SetEligibilityRule performs a PUT /api/v1/platform/eligibility/{school}/{action} (the `SetEligibilityRule` operationId) request.
 	// Takes a body of the `application/json` content type.
-	SetEligibilityRule(ctx context.Context, school string, action string, params *SetEligibilityRuleParams, body SetEligibilityRuleJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+	SetEligibilityRule(ctx context.Context, school string, action Action, params *SetEligibilityRuleParams, body SetEligibilityRuleJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 // GetEligibilityRule performs a GET /api/v1/platform/eligibility/{school}/{action} (the `GetEligibilityRule` operationId) request.
-func (c *Client) GetEligibilityRule(ctx context.Context, school string, action string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+func (c *Client) GetEligibilityRule(ctx context.Context, school string, action Action, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetEligibilityRuleRequest(c.Server, school, action)
 	if err != nil {
 		return nil, err
@@ -202,7 +262,7 @@ func (c *Client) GetEligibilityRule(ctx context.Context, school string, action s
 
 // SetEligibilityRuleWithBody performs a PUT /api/v1/platform/eligibility/{school}/{action} (the `SetEligibilityRule` operationId) request,
 // with any type of body and a specified content type.
-func (c *Client) SetEligibilityRuleWithBody(ctx context.Context, school string, action string, params *SetEligibilityRuleParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+func (c *Client) SetEligibilityRuleWithBody(ctx context.Context, school string, action Action, params *SetEligibilityRuleParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewSetEligibilityRuleRequestWithBody(c.Server, school, action, params, contentType, body)
 	if err != nil {
 		return nil, err
@@ -216,7 +276,7 @@ func (c *Client) SetEligibilityRuleWithBody(ctx context.Context, school string, 
 
 // SetEligibilityRule performs a PUT /api/v1/platform/eligibility/{school}/{action} (the `SetEligibilityRule` operationId) request.
 // Takes a body of the `application/json` content type.
-func (c *Client) SetEligibilityRule(ctx context.Context, school string, action string, params *SetEligibilityRuleParams, body SetEligibilityRuleJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+func (c *Client) SetEligibilityRule(ctx context.Context, school string, action Action, params *SetEligibilityRuleParams, body SetEligibilityRuleJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewSetEligibilityRuleRequest(c.Server, school, action, params, body)
 	if err != nil {
 		return nil, err
@@ -229,7 +289,7 @@ func (c *Client) SetEligibilityRule(ctx context.Context, school string, action s
 }
 
 // NewGetEligibilityRuleRequest constructs an http.Request for the GetEligibilityRule method
-func NewGetEligibilityRuleRequest(server string, school string, action string) (*http.Request, error) {
+func NewGetEligibilityRuleRequest(server string, school string, action Action) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -270,7 +330,7 @@ func NewGetEligibilityRuleRequest(server string, school string, action string) (
 }
 
 // NewSetEligibilityRuleRequest calls the generic SetEligibilityRule builder with application/json body
-func NewSetEligibilityRuleRequest(server string, school string, action string, params *SetEligibilityRuleParams, body SetEligibilityRuleJSONRequestBody) (*http.Request, error) {
+func NewSetEligibilityRuleRequest(server string, school string, action Action, params *SetEligibilityRuleParams, body SetEligibilityRuleJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
 	buf, err := json.Marshal(body)
 	if err != nil {
@@ -281,7 +341,7 @@ func NewSetEligibilityRuleRequest(server string, school string, action string, p
 }
 
 // NewSetEligibilityRuleRequestWithBody constructs an http.Request for the SetEligibilityRule method, with any body, and a specified content type
-func NewSetEligibilityRuleRequestWithBody(server string, school string, action string, params *SetEligibilityRuleParams, contentType string, body io.Reader) (*http.Request, error) {
+func NewSetEligibilityRuleRequestWithBody(server string, school string, action Action, params *SetEligibilityRuleParams, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -383,17 +443,17 @@ type ClientWithResponsesInterface interface {
 	// GetEligibilityRuleWithResponse performs a GET /api/v1/platform/eligibility/{school}/{action} (the `GetEligibilityRule` operationId) request.
 	//
 	// Returns a wrapper object for the known response body format(s).
-	GetEligibilityRuleWithResponse(ctx context.Context, school string, action string, reqEditors ...RequestEditorFn) (*GetEligibilityRuleResponse, error)
+	GetEligibilityRuleWithResponse(ctx context.Context, school string, action Action, reqEditors ...RequestEditorFn) (*GetEligibilityRuleResponse, error)
 
 	// SetEligibilityRuleWithBodyWithResponse performs a PUT /api/v1/platform/eligibility/{school}/{action} (the `SetEligibilityRule` operationId) request,
 	// with any type of body and a specified content type.
 	//
 	// Returns a wrapper object for the known response body format(s).
-	SetEligibilityRuleWithBodyWithResponse(ctx context.Context, school string, action string, params *SetEligibilityRuleParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetEligibilityRuleResponse, error)
+	SetEligibilityRuleWithBodyWithResponse(ctx context.Context, school string, action Action, params *SetEligibilityRuleParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetEligibilityRuleResponse, error)
 
 	// SetEligibilityRuleWithResponse performs a PUT /api/v1/platform/eligibility/{school}/{action} (the `SetEligibilityRule` operationId) request.
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
-	SetEligibilityRuleWithResponse(ctx context.Context, school string, action string, params *SetEligibilityRuleParams, body SetEligibilityRuleJSONRequestBody, reqEditors ...RequestEditorFn) (*SetEligibilityRuleResponse, error)
+	SetEligibilityRuleWithResponse(ctx context.Context, school string, action Action, params *SetEligibilityRuleParams, body SetEligibilityRuleJSONRequestBody, reqEditors ...RequestEditorFn) (*SetEligibilityRuleResponse, error)
 }
 
 type GetEligibilityRuleResponse struct {
@@ -551,7 +611,7 @@ func (r SetEligibilityRuleResponse) ContentType() string {
 // GetEligibilityRuleWithResponse performs a GET /api/v1/platform/eligibility/{school}/{action} (the `GetEligibilityRule` operationId) request.
 //
 // Returns a wrapper object for the known response body format(s).
-func (c *ClientWithResponses) GetEligibilityRuleWithResponse(ctx context.Context, school string, action string, reqEditors ...RequestEditorFn) (*GetEligibilityRuleResponse, error) {
+func (c *ClientWithResponses) GetEligibilityRuleWithResponse(ctx context.Context, school string, action Action, reqEditors ...RequestEditorFn) (*GetEligibilityRuleResponse, error) {
 	rsp, err := c.GetEligibilityRule(ctx, school, action, reqEditors...)
 	if err != nil {
 		return nil, err
@@ -563,7 +623,7 @@ func (c *ClientWithResponses) GetEligibilityRuleWithResponse(ctx context.Context
 // with any type of body and a specified content type.
 //
 // Returns a wrapper object for the known response body format(s).
-func (c *ClientWithResponses) SetEligibilityRuleWithBodyWithResponse(ctx context.Context, school string, action string, params *SetEligibilityRuleParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetEligibilityRuleResponse, error) {
+func (c *ClientWithResponses) SetEligibilityRuleWithBodyWithResponse(ctx context.Context, school string, action Action, params *SetEligibilityRuleParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetEligibilityRuleResponse, error) {
 	rsp, err := c.SetEligibilityRuleWithBody(ctx, school, action, params, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
@@ -573,7 +633,7 @@ func (c *ClientWithResponses) SetEligibilityRuleWithBodyWithResponse(ctx context
 
 // SetEligibilityRuleWithResponse performs a PUT /api/v1/platform/eligibility/{school}/{action} (the `SetEligibilityRule` operationId) request.
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
-func (c *ClientWithResponses) SetEligibilityRuleWithResponse(ctx context.Context, school string, action string, params *SetEligibilityRuleParams, body SetEligibilityRuleJSONRequestBody, reqEditors ...RequestEditorFn) (*SetEligibilityRuleResponse, error) {
+func (c *ClientWithResponses) SetEligibilityRuleWithResponse(ctx context.Context, school string, action Action, params *SetEligibilityRuleParams, body SetEligibilityRuleJSONRequestBody, reqEditors ...RequestEditorFn) (*SetEligibilityRuleResponse, error) {
 	rsp, err := c.SetEligibilityRule(ctx, school, action, params, body, reqEditors...)
 	if err != nil {
 		return nil, err

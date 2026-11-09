@@ -46,6 +46,11 @@
       "PLAT-ADMIN-ALL-01": [
         "postgres/admin_platform_test.go#TestPlatformAdministratorAllCapabilitiesAndDelegation",
         "postgres/admin_platform_test.go#TestPlatformEffectiveModeUsesCurrentTargetIdentity"
+      ],
+      "PLAT-PURCHASE-01": [
+        "eligibility/rules_test.go#TestPurchaseDefaultsRequireCampusQualification",
+        "postgres/integration_test.go#TestPurchaseRulesGlobalAndSchoolOverrides",
+        "eligibility/httpapi/handler_test.go#TestPurchaseConfigurationActions"
       ]
     }
   }

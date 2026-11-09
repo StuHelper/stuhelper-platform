@@ -35,6 +35,11 @@ export interface components {
         Error: {
             code: string;
         };
+        /**
+         * @description 动作目录。resources.purchase 与 membership.purchase 默认要求 campus_eligibility；登录由调用方已验证身份保证。各动作独立支持全站规则与授权范围覆盖。
+         * @enum {string}
+         */
+        Action: "content.enter" | "read_full" | "vote" | "bookmark" | "report" | "resources.discover" | "resources.download.public" | "resources.download.restricted" | "resources.purchase" | "membership.purchase" | "publish_course" | "publish_mentor" | "reply" | "resources.upload" | "reply_teacher";
     };
     responses: never;
     parameters: never;
@@ -50,7 +55,7 @@ export interface operations {
             header?: never;
             path: {
                 school: string;
-                action: string;
+                action: components["schemas"]["Action"];
             };
             cookie?: never;
         };
@@ -120,7 +125,7 @@ export interface operations {
             };
             path: {
                 school: string;
-                action: string;
+                action: components["schemas"]["Action"];
             };
             cookie?: never;
         };

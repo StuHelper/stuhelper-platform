@@ -56,3 +56,28 @@ func (r *permissionRepo) Apply(_ context.Context, in e.Update) (e.Rule, error) {
 	r.writes++
 	return e.Rule{Version: "2", Conditions: in.Change.Conditions}, nil
 }
+
+func TestPurchaseConfigurationActions(t *testing.T) {
+	repo := &permissionRepo{}
+	h := httpapi.Handler{Service: e.Service{Repo: repo}, Authenticate: func(*http.Request) (string, error) { return "admin", nil }, Authorize: func(context.Context, string, string) error { return nil }}
+	mux := http.NewServeMux()
+	mux.Handle("/api/v1/platform/eligibility/{school}/{action}", h)
+	for _, action := range []string{"resources.purchase", "membership.purchase", "resources.unlock"} {
+		for _, method := range []string{"GET", "PUT"} {
+			req := httptest.NewRequest(method, "/api/v1/platform/eligibility/school/"+action, strings.NewReader(`{"expected_version":"initial","conditions":[]}`))
+			req.Header.Set("Idempotency-Key", action)
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+			want := 200
+			if action == "resources.unlock" {
+				want = 400
+			}
+			if w.Code != want {
+				t.Fatal(action, method, w.Code, w.Body.String())
+			}
+		}
+	}
+	if repo.writes != 2 {
+		t.Fatal("invalid action reached repository", repo.writes)
+	}
+}

@@ -12,6 +12,8 @@ func (Defaults) Effective(_ context.Context, action, _ string) (Rule, error) {
 	switch action {
 	case "content.enter", "read_full", "vote", "bookmark", "report", "resources.discover", "resources.download.public", "resources.download.restricted":
 		rule.Conditions = []Condition{Content}
+	case "resources.purchase", "membership.purchase":
+		rule.Conditions = []Condition{Campus}
 	case "publish_course":
 		rule.Conditions = []Condition{Campus, Phone, Enrollment}
 	case "publish_mentor", "reply", "resources.upload":

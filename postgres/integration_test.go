@@ -10,6 +10,7 @@ import (
 	p "github.com/StuHelper/stuhelper-platform/postgres"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"os"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -176,5 +177,37 @@ func TestInstallationFactsAreDurableMonotoneAndUnknownFailsClosed(t *testing.T) 
 	}
 	if state, err := repo.State(ctx, "resources"); err == nil || state != h.Unknown {
 		t.Fatal("failed history certified absence", state, err)
+	}
+}
+
+func TestPurchaseRulesGlobalAndSchoolOverrides(t *testing.T) {
+	repo, _ := setup(t)
+	s := e.Service{Repo: repo}
+	check := func(school, action string, want []e.Condition) e.Rule {
+		t.Helper()
+		rule, err := s.Get(ctx, school, action)
+		if err != nil || !reflect.DeepEqual(rule.Conditions, want) {
+			t.Fatal(school, action, rule, err)
+		}
+		return rule
+	}
+	for _, action := range []string{"resources.purchase", "membership.purchase"} {
+		rule := check("school", action, []e.Condition{e.Campus})
+		if _, err := s.Set(ctx, "admin", action+"-global", "*", action, e.Change{ExpectedVersion: rule.Version, Conditions: []e.Condition{e.Campus, e.Phone}}); err != nil {
+			t.Fatal(err)
+		}
+		rule = check("school", action, []e.Condition{e.Campus, e.Phone})
+		if _, err := s.Set(ctx, "admin", action+"-school", "school", action, e.Change{ExpectedVersion: rule.Version, Conditions: []e.Condition{}}); err != nil {
+			t.Fatal(err)
+		}
+		check("school", action, []e.Condition{})
+		check("other", action, []e.Condition{e.Campus, e.Phone})
+		check("school", "resources.download.restricted", []e.Condition{e.Content})
+		if action == "resources.purchase" {
+			check("school", "membership.purchase", []e.Condition{e.Campus})
+		}
+	}
+	if _, err := s.Get(ctx, "school", "resources.unlock"); !errors.Is(err, e.ErrRule) {
+		t.Fatal("unknown action accepted", err)
 	}
 }
