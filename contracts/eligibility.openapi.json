@@ -1,0 +1,312 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "StuHelper action eligibility configuration",
+    "version": "0.2.0"
+  },
+  "paths": {
+    "/api/v1/platform/eligibility/{school}/{action}": {
+      "get": {
+        "operationId": "getEligibilityRule",
+        "parameters": [
+          {
+            "name": "school",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          {
+            "name": "action",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Action"
+            }
+          }
+        ],
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "当前规则或原操作结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Rule"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无当前学校配置权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "版本或幂等键冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "配置不可用或容量已满",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "setEligibilityRule",
+        "parameters": [
+          {
+            "name": "school",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          {
+            "name": "action",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Action"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        ],
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Change"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "当前规则或原操作结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Rule"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无当前学校配置权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "版本或幂等键冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "配置不可用或容量已满",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "session": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "stuhelper_session"
+      }
+    },
+    "schemas": {
+      "Rule": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "version",
+          "conditions"
+        ],
+        "properties": {
+          "version": {
+            "type": "string"
+          },
+          "conditions": {
+            "type": "array",
+            "uniqueItems": true,
+            "maxItems": 5,
+            "items": {
+              "type": "string",
+              "enum": [
+                "content_access",
+                "campus_eligibility",
+                "phone_bound",
+                "identity_verified",
+                "course_enrollment"
+              ]
+            }
+          }
+        }
+      },
+      "Change": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "expected_version",
+          "conditions"
+        ],
+        "properties": {
+          "expected_version": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "conditions": {
+            "type": "array",
+            "uniqueItems": true,
+            "maxItems": 5,
+            "items": {
+              "type": "string",
+              "enum": [
+                "content_access",
+                "campus_eligibility",
+                "phone_bound",
+                "identity_verified",
+                "course_enrollment"
+              ]
+            }
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          }
+        }
+      },
+      "Action": {
+        "type": "string",
+        "description": "动作目录。resources.purchase 与 membership.purchase 默认要求 campus_eligibility；登录由调用方已验证身份保证。各动作独立支持全站规则与授权范围覆盖。",
+        "enum": [
+          "content.enter",
+          "read_full",
+          "vote",
+          "bookmark",
+          "report",
+          "resources.discover",
+          "resources.download.public",
+          "resources.download.restricted",
+          "resources.purchase",
+          "membership.purchase",
+          "publish_course",
+          "publish_mentor",
+          "reply",
+          "resources.upload",
+          "reply_teacher"
+        ]
+      }
+    }
+  }
+}

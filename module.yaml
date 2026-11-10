@@ -8,3 +8,37 @@ capabilities:
   - platform.status
   - platform.modules
 capability_requires: {}
+scenario_tests:
+  PLAT-CONFIG-01:
+    - postgres/integration_test.go#TestConfigurationConcurrencyReplayRollbackAndRetention
+    - eligibility/cache_test.go#TestRuleCacheExpiryInvalidationAndFailure
+    - eligibility/cache_test.go#TestRuleCacheDoesNotReinsertInvalidatedInFlightRead
+  PLAT-HISTORY-01:
+    - postgres/integration_test.go#TestInstallationFactsAreDurableMonotoneAndUnknownFailsClosed
+  AO-01:
+    - postgres/admin_test.go#TestAdminAO01AO04ScopeAndSeparateCapabilities
+    - postgres/admin_test.go#TestAdminDelegationSelfEscalationAndImmediateRevocation
+  AO-02:
+    - postgres/admin_test.go#TestAdminAO02ConcurrentRevisionUniquenessAndReplay
+    - postgres/admin_test.go#TestAdminHTTPAuthenticationValidationAndConflict
+  AO-04:
+    - postgres/admin_test.go#TestAdminAO01AO04ScopeAndSeparateCapabilities
+  PLAT-ADMIN-01:
+    - postgres/admin_test.go#TestAdminAtomicAuditFailureAndDatabaseIsolation
+    - postgres/admin_test.go#TestPlatformOperationsScopeFiltersCursorAndRevocation
+    - postgres/admin_test.go#TestAdminMigrationRetentionAndPageBound
+  PLAT-AUDIT-01:
+    - postgres/audit_test.go#TestPlatformAuditSnapshotExpiryEvictionAndTokenFormat
+    - postgres/audit_test.go#TestPlatformAuditManyPendingTransactions
+    - postgres/audit_test.go#TestAuditProvidersStableMergeAndSnapshot
+    - postgres/audit_test.go#TestAuditProvidersAuthorizationBeforeReadAndRevokedPage
+    - postgres/audit_test.go#TestAuditPartialResultsStayMarkedAndRejectBadProvider
+    - postgres/audit_test.go#TestPlatformAuditSnapshotExcludesDelayedCommitAndDetectsRetention
+    - postgres/audit_test.go#TestAuditHTTPGeneratedClientPartialResponse
+  PLAT-ADMIN-ALL-01:
+    - postgres/admin_platform_test.go#TestPlatformAdministratorAllCapabilitiesAndDelegation
+    - postgres/admin_platform_test.go#TestPlatformEffectiveModeUsesCurrentTargetIdentity
+  PLAT-PURCHASE-01:
+    - eligibility/rules_test.go#TestPurchaseDefaultsRequireCampusQualification
+    - postgres/integration_test.go#TestPurchaseRulesGlobalAndSchoolOverrides
+    - eligibility/httpapi/handler_test.go#TestPurchaseConfigurationActions

@@ -12,6 +12,11 @@ concurrency:
   cancel-in-progress: true
 jobs:
   check:
-    uses: StuHelper/stuhelper-tooling/.github/workflows/go-checks.yml@v0.1.0
+    uses: StuHelper/stuhelper-tooling/.github/workflows/go-checks.yml@v0.1.4
     with:
       name: Platform checks
+      setup-command: |
+        sudo apt-get update -qq
+        sudo apt-get install -y postgresql postgresql-client
+        dpkg-query -W postgresql postgresql-client
+      check-command: bash scripts/check-with-postgres.sh
