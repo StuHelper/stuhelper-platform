@@ -2,9 +2,10 @@ package postgres
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"strconv"
-	"strings"
 
 	a "github.com/StuHelper/stuhelper-platform/admin"
 )
@@ -23,14 +24,31 @@ func (s adminStore) ReadAudit(ctx context.Context, q a.AuditRequest) (a.AuditBat
 		if err := s.tx.QueryRowContext(ctx, `SELECT pg_current_snapshot()::text`).Scan(&visibility); err != nil {
 			return out, adminError(err)
 		}
-	} else {
-		previous, token, ok := strings.Cut(q.Snapshot, "|")
-		if !ok || previous != strconv.FormatInt(epoch, 10) {
+
+		// Persist only visibility metadata outside the read-only view transaction.
+		// Failed reads may leave a cache entry; capacity and expiry bound its lifetime.
+		token := make([]byte, 16)
+		if _, err := rand.Read(token); err != nil {
 			return out, a.ErrUnavailable
 		}
-		visibility = token
+		out.Snapshot = hex.EncodeToString(token)
+		if _, err := s.snapshots.ExecContext(ctx, `INSERT INTO platform.audit_snapshots(slot,token,visibility,epoch,created_at)
+ VALUES ((nextval('platform.audit_snapshot_slot') % 4096)::integer,$1,$2::pg_snapshot,$3,clock_timestamp())
+ ON CONFLICT(slot) DO UPDATE SET token=EXCLUDED.token,visibility=EXCLUDED.visibility,epoch=EXCLUDED.epoch,created_at=EXCLUDED.created_at`, out.Snapshot, visibility, epoch); err != nil {
+			return out, adminError(err)
+		}
+	} else {
+		if len(q.Snapshot) != 32 {
+			return out, a.ErrUnavailable
+		}
+		if _, err := hex.DecodeString(q.Snapshot); err != nil {
+			return out, a.ErrUnavailable
+		}
+		if err := s.tx.QueryRowContext(ctx, `SELECT visibility::text FROM platform.audit_snapshots WHERE token=$1 AND epoch=$2 AND created_at > statement_timestamp()-interval '24 hours'`, q.Snapshot, epoch).Scan(&visibility); err != nil {
+			return out, adminError(err)
+		}
+		out.Snapshot = q.Snapshot
 	}
-	out.Snapshot = strconv.FormatInt(epoch, 10) + "|" + visibility
 	scopes, _ := json.Marshal(q.Scopes)
 	var beforeTime any
 	beforeSource, beforeID := "", ""

@@ -31,3 +31,16 @@ CREATE TABLE IF NOT EXISTS platform.audit_retention(singleton boolean PRIMARY KE
 INSERT INTO platform.audit_retention VALUES(true,1) ON CONFLICT DO NOTHING;
 CREATE INDEX IF NOT EXISTS platform_audit_merge ON platform.audit(created_at DESC,(id::text) COLLATE "C" DESC);
 REVOKE ALL ON ALL TABLES IN SCHEMA platform FROM PUBLIC;
+
+-- Bounded visibility cache: slot reuse invalidates old tokens explicitly.
+CREATE SEQUENCE IF NOT EXISTS platform.audit_snapshot_slot;
+CREATE TABLE IF NOT EXISTS platform.audit_snapshots(
+ slot integer PRIMARY KEY CHECK(slot>=0 AND slot<4096),
+ token text UNIQUE NOT NULL CHECK(token ~ '^[0-9a-f]{32}$'),
+ visibility pg_snapshot NOT NULL CHECK(octet_length(visibility::text)<=1048576),
+ epoch bigint NOT NULL,
+ created_at timestamptz NOT NULL
+);
+CREATE INDEX IF NOT EXISTS platform_audit_snapshots_expiry ON platform.audit_snapshots(created_at);
+REVOKE ALL ON platform.audit_snapshots FROM PUBLIC;
+REVOKE ALL ON SEQUENCE platform.audit_snapshot_slot FROM PUBLIC;

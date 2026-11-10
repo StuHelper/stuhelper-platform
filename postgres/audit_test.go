@@ -2,6 +2,7 @@ package postgres_test
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"github.com/StuHelper/stuhelper-platform/account"
@@ -295,5 +296,113 @@ func TestAuditHTTPGeneratedClientPartialResponse(t *testing.T) {
 	response, err = client.ListPlatformOperationsWithResponse(ctx, &sdk.ListPlatformOperationsParams{Sources: &sources})
 	if err != nil || response.JSON400 == nil {
 		t.Fatal(response, err)
+	}
+}
+
+func TestPlatformAuditManyPendingTransactions(t *testing.T) {
+	s, repo := service(t)
+	now := time.Now().UTC()
+	var pending []*sql.Tx
+	defer func() {
+		for _, tx := range pending {
+			_ = tx.Rollback()
+		}
+	}()
+	for range 70 {
+		tx, err := repo.DB.BeginTx(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pending = append(pending, tx)
+		if _, err = tx.Exec(`INSERT INTO platform.audit(actor,action,target,data,created_at) VALUES('synthetic','many-pending','delayed','{}',$1)`, now.Add(-time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i := range 3 {
+		if _, err := repo.DB.Exec(`INSERT INTO platform.audit(actor,action,target,data,created_at) VALUES('synthetic','many-pending',$1,'{}',$2)`, fmt.Sprint(i), now.Add(-time.Duration(i+2)*time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var raw string
+	if err := repo.DB.QueryRow(`SELECT pg_current_snapshot()::text`).Scan(&raw); err != nil {
+		t.Fatal(err)
+	}
+	if len(raw) <= 256 {
+		t.Fatalf("fixture snapshot too small: %d", len(raw))
+	}
+	f := a.Filter{Scope: a.Global, Action: "many-pending", Limit: 1}
+	page, err := s.Operations(ctx, boss, f)
+	if err != nil || page.Partial || len(page.Items) != 1 || page.NextCursor == "" {
+		t.Fatalf("first page: %+v, %v (snapshot bytes=%d)", page, err, len(raw))
+	}
+	for _, tx := range pending {
+		if err := tx.Commit(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	count := len(page.Items)
+	for f.Cursor = page.NextCursor; f.Cursor != ""; f.Cursor = page.NextCursor {
+		page, err = s.Operations(ctx, boss, f)
+		if err != nil || page.Partial {
+			t.Fatal(page, err)
+		}
+		for _, r := range page.Items {
+			if r.Target == "delayed" {
+				t.Fatal("delayed commit entered snapshot")
+			}
+			count++
+		}
+	}
+	if count != 3 {
+		t.Fatal(count)
+	}
+}
+
+func TestPlatformAuditSnapshotExpiryEvictionAndTokenFormat(t *testing.T) {
+	for _, mode := range []string{"expired", "evicted", "old-format"} {
+		t.Run(mode, func(t *testing.T) {
+			repo, owner := setup(t)
+			if _, err := repo.DB.Exec(`INSERT INTO platform.audit(actor,action,target,data,created_at) SELECT 'synthetic','expiry',n::text,'{}',now()-interval '1 minute' FROM generate_series(1,3) n`); err != nil {
+				t.Fatal(err)
+			}
+			q := a.AuditRequest{Scopes: []a.Scope{a.Global}, Until: time.Now().UTC(), Limit: 1}
+			var batch a.AuditBatch
+			err := repo.View(ctx, func(st a.Store) error { var e error; batch, e = st.ReadAudit(ctx, q); return e })
+			if err != nil || len(batch.Snapshot) != 32 || len(batch.Records) != 1 {
+				t.Fatal(batch, err)
+			}
+			q.Snapshot = batch.Snapshot
+			switch mode {
+			case "expired":
+				if _, err = repo.DB.Exec(`UPDATE platform.audit_snapshots SET created_at=now()-interval '25 hours'`); err != nil {
+					t.Fatal(err)
+				}
+			case "evicted":
+				if _, err = owner.Exec(`SELECT setval('platform.audit_snapshot_slot',4097,false)`); err != nil {
+					t.Fatal(err)
+				}
+				fresh := q
+				fresh.Snapshot = ""
+				if err = repo.View(ctx, func(st a.Store) error { _, e := st.ReadAudit(ctx, fresh); return e }); err != nil {
+					t.Fatal(err)
+				}
+				var count int
+				if err = repo.DB.QueryRow(`SELECT count(*) FROM platform.audit_snapshots`).Scan(&count); err != nil || count != 1 {
+					t.Fatal(count, err)
+				}
+			case "old-format":
+				q.Snapshot = "1|1:2:"
+			}
+			err = repo.View(ctx, func(st a.Store) error { _, e := st.ReadAudit(ctx, q); return e })
+			if !errors.Is(err, a.ErrUnavailable) {
+				t.Fatal("invalid snapshot accepted", err)
+			}
+			if mode == "expired" {
+				n, e := repo.Cleanup(ctx, time.Now().UTC())
+				if e != nil || n != 1 {
+					t.Fatal(n, e)
+				}
+			}
+		})
 	}
 }

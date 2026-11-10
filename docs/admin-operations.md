@@ -1,7 +1,7 @@
 ---
 type: development
 status: InReview
-updated: 2026-11-08
+updated: 2026-11-10
 ---
 
 # 管理角色与操作记录
@@ -67,9 +67,13 @@ admin.AuditProvider.ReadAudit 接收可信操作者、已授权范围集合、�
 
 首轮确定时间上界，每个提供方返回固定成员集合的快照令牌。后续读取使用相同快照和全局排序位置。快照不能包含首轮以后提交的记录，即使记录时间被回填；快照过期须报错，不能静默重建。
 
-游标绑定操作者、筛选、页大小、提供方集合和授权范围。筛选变化返回 400，授权范围变化返回 403并要求重新查询。每个快照令牌上限 256 字节，游标上限 16384 字节，不保存服务端分页会话。
+游标绑定操作者、筛选、页大小、提供方集合和授权范围。筛选变化返回 400，授权范围变化返回 403并要求重新查询。每个快照令牌上限 256 字节，游标上限 16384 字节，平台只在数据库保存可见性快照，不保存结果集。
 
-platform 原始审计记录写入事务 ID，并用 PostgreSQL 可见性快照排除延迟提交。保留期清理在同一事务递增审计清理修订号；分页期间发生清理会使平台快照失效，响应标记 platform 缺失。
+platform 原始审计记录写入事务 ID，并用 PostgreSQL 可见性快照排除延迟提交。快照存入 audit_snapshots，令牌为 32 字节随机十六进制标识，不接受旧格式。
+
+快照最多 4,096 项，每项可见性文本上限 1 MiB，有效期 24 小时。槽位循环复用，淘汰或过期后原令牌返回不可用。Cleanup 每轮最多删除 100 项过期快照。快照写入使用独立连接，连接池须允许审计读取事务之外的连接。
+
+保留期清理在同一事务递增审计清理修订号；分页期间发生清理会使平台快照失效，响应标记 platform 缺失。
 
 响应 queried_modules 列出本次获准的提供方。提供方故障、超时、快照失效或违反范围／排序要求时，整个提供方批次被丢弃，partial=true，missing_modules 列出缺失模块。没有可用记录时仍明确标记部分结果。
 
@@ -79,7 +83,9 @@ platform 原始审计记录写入事务 ID，并用 PostgreSQL 可见性快照�
 
 ## 数据库与后续接入
 
-迁移身份执行 postgres.Migrate，新增表和审计列，不覆盖旧业务数据。audit_retention 保存清理修订号，运行身份需要 SELECT／UPDATE；audit 的 recorded_xid 由数据库默认写入。
+迁移身份执行 postgres.Migrate，新增表和审计列，不覆盖旧业务数据。audit_snapshots 需要 SELECT／INSERT／UPDATE／DELETE，audit_snapshot_slot 序列需要 USAGE；现有按 schema 授权脚本须在迁移后重跑。快照元数据独立提交，查询失败留下的条目仍受容量和过期规则限制。
+
+audit_retention 保存清理修订号，运行身份需要 SELECT／UPDATE；audit 的 recorded_xid 由数据库默认写入。
 
 运行身份只访问 platform schema，禁止 UPDATE／DELETE admin_roles，禁止 UPDATE audit、eligibility_requests 和 admin_requests。audit 的 DELETE 用于保留期清理。
 

@@ -12,7 +12,10 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-type adminStore struct{ tx *sql.Tx }
+type adminStore struct {
+	tx        *sql.Tx
+	snapshots *sql.DB
+}
 
 func adminError(e error) error {
 	if e == nil {
@@ -46,7 +49,7 @@ func (r *Repository) adminTransaction(ctx context.Context, write bool, fn func(a
 			return adminError(e)
 		}
 	}
-	if e = fn(adminStore{tx}); e != nil {
+	if e = fn(adminStore{tx: tx, snapshots: r.DB}); e != nil {
 		return adminError(e)
 	}
 	return adminError(tx.Commit())

@@ -45,7 +45,7 @@ func (r *Repository) CheckRuntime(ctx context.Context) error {
 	return r.Ready(ctx)
 }
 
-// Cleanup removes at most 300 expired records per call. Current configuration
+// Cleanup removes at most 400 expired records per call. Current configuration
 // and installation facts have no count cap and are never removed by retention.
 func (r *Repository) Cleanup(ctx context.Context, now time.Time) (int64, error) {
 	call, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -62,6 +62,7 @@ func (r *Repository) Cleanup(ctx context.Context, now time.Time) (int64, error) 
 		audit  bool
 	}{
 		{`DELETE FROM platform.eligibility_requests WHERE (actor,key) IN (SELECT actor,key FROM platform.eligibility_requests WHERE created_at <= $1 ORDER BY created_at LIMIT 100)`, now.Add(-24 * time.Hour), false},
+		{`DELETE FROM platform.audit_snapshots WHERE slot IN (SELECT slot FROM platform.audit_snapshots WHERE created_at <= $1 ORDER BY created_at LIMIT 100)`, now.Add(-24 * time.Hour), false},
 		{`DELETE FROM platform.admin_requests WHERE (actor,key) IN (SELECT actor,key FROM platform.admin_requests WHERE created_at <= $1 ORDER BY created_at LIMIT 100)`, now.Add(-24 * time.Hour), false},
 		{`DELETE FROM platform.audit WHERE id IN (SELECT id FROM platform.audit WHERE created_at <= $1 ORDER BY created_at LIMIT 100)`, now.AddDate(-1, 0, 0), true},
 	} {

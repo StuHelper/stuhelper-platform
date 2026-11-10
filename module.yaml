@@ -28,6 +28,8 @@ scenario_tests:
     - postgres/admin_test.go#TestPlatformOperationsScopeFiltersCursorAndRevocation
     - postgres/admin_test.go#TestAdminMigrationRetentionAndPageBound
   PLAT-AUDIT-01:
+    - postgres/audit_test.go#TestPlatformAuditSnapshotExpiryEvictionAndTokenFormat
+    - postgres/audit_test.go#TestPlatformAuditManyPendingTransactions
     - postgres/audit_test.go#TestAuditProvidersStableMergeAndSnapshot
     - postgres/audit_test.go#TestAuditProvidersAuthorizationBeforeReadAndRevokedPage
     - postgres/audit_test.go#TestAuditPartialResultsStayMarkedAndRejectBadProvider
