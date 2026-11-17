@@ -100,6 +100,33 @@ func (e ChangeConditions) Valid() bool {
 	}
 }
 
+// Defines values for Condition.
+const (
+	ConditionCampusEligibility Condition = "campus_eligibility"
+	ConditionContentAccess     Condition = "content_access"
+	ConditionCourseEnrollment  Condition = "course_enrollment"
+	ConditionIdentityVerified  Condition = "identity_verified"
+	ConditionPhoneBound        Condition = "phone_bound"
+)
+
+// Valid indicates whether the value is a known member of the Condition enum.
+func (e Condition) Valid() bool {
+	switch e {
+	case ConditionCampusEligibility:
+		return true
+	case ConditionContentAccess:
+		return true
+	case ConditionCourseEnrollment:
+		return true
+	case ConditionIdentityVerified:
+		return true
+	case ConditionPhoneBound:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for RuleConditions.
 const (
 	RuleConditionsCampusEligibility RuleConditions = "campus_eligibility"
@@ -127,6 +154,27 @@ func (e RuleConditions) Valid() bool {
 	}
 }
 
+// Defines values for RuleSource.
+const (
+	Global         RuleSource = "global"
+	InitialDefault RuleSource = "initial_default"
+	SchoolOverride RuleSource = "school_override"
+)
+
+// Valid indicates whether the value is a known member of the RuleSource enum.
+func (e RuleSource) Valid() bool {
+	switch e {
+	case Global:
+		return true
+	case InitialDefault:
+		return true
+	case SchoolOverride:
+		return true
+	default:
+		return false
+	}
+}
+
 // Action 动作目录。resources.purchase 与 membership.purchase 默认要求 campus_eligibility；登录由调用方已验证身份保证。各动作独立支持全站规则与授权范围覆盖。
 type Action string
 
@@ -134,29 +182,87 @@ type Action string
 type Change struct {
 	Conditions      []ChangeConditions `json:"conditions"`
 	ExpectedVersion string             `json:"expected_version"`
+
+	// Reason 配置变更原因，写入平台审计记录。
+	Reason *string `json:"reason,omitempty"`
 }
 
 // ChangeConditions defines model for Change.Conditions.
 type ChangeConditions string
 
+// Condition defines model for Condition.
+type Condition string
+
+// EligibilityEvaluation defines model for EligibilityEvaluation.
+type EligibilityEvaluation struct {
+	// Action 动作目录。resources.purchase 与 membership.purchase 默认要求 campus_eligibility；登录由调用方已验证身份保证。各动作独立支持全站规则与授权范围覆盖。
+	Action                Action      `json:"action"`
+	Allowed               bool        `json:"allowed"`
+	MissingConditions     []Condition `json:"missing_conditions"`
+	RuleVersion           string      `json:"rule_version"`
+	SatisfiedConditions   []Condition `json:"satisfied_conditions"`
+	School                string      `json:"school"`
+	UnavailableConditions []Condition `json:"unavailable_conditions"`
+}
+
+// EligibilityEvaluationBatch defines model for EligibilityEvaluationBatch.
+type EligibilityEvaluationBatch struct {
+	Items  []EligibilityEvaluation `json:"items"`
+	School string                  `json:"school"`
+}
+
 // Error defines model for Error.
 type Error struct {
-	Code string `json:"code"`
+	Code       string                 `json:"code"`
+	Evaluation *EligibilityEvaluation `json:"evaluation,omitempty"`
+}
+
+// Reset defines model for Reset.
+type Reset struct {
+	ExpectedVersion string `json:"expected_version"`
+	Reason          string `json:"reason"`
 }
 
 // Rule defines model for Rule.
 type Rule struct {
-	Conditions []RuleConditions `json:"conditions"`
-	Version    string           `json:"version"`
+	Conditions          []RuleConditions `json:"conditions"`
+	GlobalConditions    *[]Condition     `json:"global_conditions,omitempty"`
+	Source              *RuleSource      `json:"source,omitempty"`
+	SupportedConditions *[]Condition     `json:"supported_conditions,omitempty"`
+	Version             string           `json:"version"`
 }
 
 // RuleConditions defines model for Rule.Conditions.
 type RuleConditions string
 
+// RuleSource defines model for RuleSource.
+type RuleSource string
+
+// SchoolConfiguration defines model for SchoolConfiguration.
+type SchoolConfiguration struct {
+	Rules   map[string]Rule `json:"rules"`
+	School  string          `json:"school"`
+	Version string          `json:"version"`
+}
+
+// CheckEligibilityActionsParams defines parameters for CheckEligibilityActions.
+type CheckEligibilityActionsParams struct {
+	School  string   `form:"school" json:"school"`
+	Actions []Action `form:"actions" json:"actions"`
+}
+
+// ResetEligibilityRuleParams defines parameters for ResetEligibilityRule.
+type ResetEligibilityRuleParams struct {
+	IdempotencyKey string `json:"Idempotency-Key"`
+}
+
 // SetEligibilityRuleParams defines parameters for SetEligibilityRule.
 type SetEligibilityRuleParams struct {
 	IdempotencyKey string `json:"Idempotency-Key"`
 }
+
+// ResetEligibilityRuleJSONRequestBody defines body for ResetEligibilityRule for application/json ContentType.
+type ResetEligibilityRuleJSONRequestBody = Reset
 
 // SetEligibilityRuleJSONRequestBody defines body for SetEligibilityRule for application/json ContentType.
 type SetEligibilityRuleJSONRequestBody = Change
@@ -235,6 +341,28 @@ func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
 // The interface specification for the client above.
 type ClientInterface interface {
 
+	// CheckEligibilityActions performs a GET /api/v1/platform/eligibility-check (the `CheckEligibilityActions` operationId) request.
+	//
+	// 面向已登录师生前端与移动端的批量动作资格预检接口。一次返回当前账号在指定学校与动作集合上的满足状态、缺失条件与暂不可用条件。.
+	CheckEligibilityActions(ctx context.Context, params *CheckEligibilityActionsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetSchoolEligibility performs a GET /api/v1/platform/eligibility/{school} (the `GetSchoolEligibility` operationId) request.
+	//
+	// 读取指定学校或全站（*）全部 15 个动作的生效规则矩阵、规则来源、全站基准条件与当前范围修订号。.
+	GetSchoolEligibility(ctx context.Context, school string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ResetEligibilityRuleWithBody performs a DELETE /api/v1/platform/eligibility/{school}/{action} (the `ResetEligibilityRule` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// 删除指定学校的显式覆盖规则并恢复继承全站规则；禁止对全站 * 执行删除。不存在学校覆盖时返回 409。.
+	ResetEligibilityRuleWithBody(ctx context.Context, school string, action Action, params *ResetEligibilityRuleParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ResetEligibilityRule performs a DELETE /api/v1/platform/eligibility/{school}/{action} (the `ResetEligibilityRule` operationId) request.
+	// Takes a body of the `application/json` content type.
+	//
+	// 删除指定学校的显式覆盖规则并恢复继承全站规则；禁止对全站 * 执行删除。不存在学校覆盖时返回 409。.
+	ResetEligibilityRule(ctx context.Context, school string, action Action, params *ResetEligibilityRuleParams, body ResetEligibilityRuleJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetEligibilityRule performs a GET /api/v1/platform/eligibility/{school}/{action} (the `GetEligibilityRule` operationId) request.
 	GetEligibilityRule(ctx context.Context, school string, action Action, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -245,6 +373,68 @@ type ClientInterface interface {
 	// SetEligibilityRule performs a PUT /api/v1/platform/eligibility/{school}/{action} (the `SetEligibilityRule` operationId) request.
 	// Takes a body of the `application/json` content type.
 	SetEligibilityRule(ctx context.Context, school string, action Action, params *SetEligibilityRuleParams, body SetEligibilityRuleJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+}
+
+// CheckEligibilityActions performs a GET /api/v1/platform/eligibility-check (the `CheckEligibilityActions` operationId) request.
+//
+// 面向已登录师生前端与移动端的批量动作资格预检接口。一次返回当前账号在指定学校与动作集合上的满足状态、缺失条件与暂不可用条件。.
+func (c *Client) CheckEligibilityActions(ctx context.Context, params *CheckEligibilityActionsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCheckEligibilityActionsRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetSchoolEligibility performs a GET /api/v1/platform/eligibility/{school} (the `GetSchoolEligibility` operationId) request.
+//
+// 读取指定学校或全站（*）全部 15 个动作的生效规则矩阵、规则来源、全站基准条件与当前范围修订号。.
+func (c *Client) GetSchoolEligibility(ctx context.Context, school string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetSchoolEligibilityRequest(c.Server, school)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ResetEligibilityRuleWithBody performs a DELETE /api/v1/platform/eligibility/{school}/{action} (the `ResetEligibilityRule` operationId) request,
+// with any type of body and a specified content type.
+//
+// 删除指定学校的显式覆盖规则并恢复继承全站规则；禁止对全站 * 执行删除。不存在学校覆盖时返回 409。.
+func (c *Client) ResetEligibilityRuleWithBody(ctx context.Context, school string, action Action, params *ResetEligibilityRuleParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewResetEligibilityRuleRequestWithBody(c.Server, school, action, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ResetEligibilityRule performs a DELETE /api/v1/platform/eligibility/{school}/{action} (the `ResetEligibilityRule` operationId) request.
+// Takes a body of the `application/json` content type.
+//
+// 删除指定学校的显式覆盖规则并恢复继承全站规则；禁止对全站 * 执行删除。不存在学校覆盖时返回 409。.
+func (c *Client) ResetEligibilityRule(ctx context.Context, school string, action Action, params *ResetEligibilityRuleParams, body ResetEligibilityRuleJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewResetEligibilityRuleRequest(c.Server, school, action, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
 }
 
 // GetEligibilityRule performs a GET /api/v1/platform/eligibility/{school}/{action} (the `GetEligibilityRule` operationId) request.
@@ -286,6 +476,169 @@ func (c *Client) SetEligibilityRule(ctx context.Context, school string, action A
 		return nil, err
 	}
 	return c.Client.Do(req)
+}
+
+// NewCheckEligibilityActionsRequest constructs an http.Request for the CheckEligibilityActions method
+func NewCheckEligibilityActionsRequest(server string, params *CheckEligibilityActionsParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/platform/eligibility-check")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if queryFrag, err := runtime.StyleParamWithOptions("form", true, "school", params.School, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+			return nil, err
+		} else {
+			for _, qp := range strings.Split(queryFrag, "&") {
+				rawQueryFragments = append(rawQueryFragments, qp)
+			}
+		}
+
+		if params.Actions != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "actions", params.Actions, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "array", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetSchoolEligibilityRequest constructs an http.Request for the GetSchoolEligibility method
+func NewGetSchoolEligibilityRequest(server string, school string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "school", school, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/platform/eligibility/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewResetEligibilityRuleRequest calls the generic ResetEligibilityRule builder with application/json body
+func NewResetEligibilityRuleRequest(server string, school string, action Action, params *ResetEligibilityRuleParams, body ResetEligibilityRuleJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewResetEligibilityRuleRequestWithBody(server, school, action, params, "application/json", bodyReader)
+}
+
+// NewResetEligibilityRuleRequestWithBody constructs an http.Request for the ResetEligibilityRule method, with any body, and a specified content type
+func NewResetEligibilityRuleRequestWithBody(server string, school string, action Action, params *ResetEligibilityRuleParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "school", school, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "action", action, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/platform/eligibility/%s/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("Idempotency-Key", headerParam0)
+
+	}
+
+	return req, nil
 }
 
 // NewGetEligibilityRuleRequest constructs an http.Request for the GetEligibilityRule method
@@ -440,6 +793,34 @@ func WithBaseURL(baseURL string) ClientOption {
 // ClientWithResponsesInterface is the interface specification for the client with responses above.
 type ClientWithResponsesInterface interface {
 
+	// CheckEligibilityActionsWithResponse performs a GET /api/v1/platform/eligibility-check (the `CheckEligibilityActions` operationId) request.
+	//
+	// 面向已登录师生前端与移动端的批量动作资格预检接口。一次返回当前账号在指定学校与动作集合上的满足状态、缺失条件与暂不可用条件。.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	CheckEligibilityActionsWithResponse(ctx context.Context, params *CheckEligibilityActionsParams, reqEditors ...RequestEditorFn) (*CheckEligibilityActionsResponse, error)
+
+	// GetSchoolEligibilityWithResponse performs a GET /api/v1/platform/eligibility/{school} (the `GetSchoolEligibility` operationId) request.
+	//
+	// 读取指定学校或全站（*）全部 15 个动作的生效规则矩阵、规则来源、全站基准条件与当前范围修订号。.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	GetSchoolEligibilityWithResponse(ctx context.Context, school string, reqEditors ...RequestEditorFn) (*GetSchoolEligibilityResponse, error)
+
+	// ResetEligibilityRuleWithBodyWithResponse performs a DELETE /api/v1/platform/eligibility/{school}/{action} (the `ResetEligibilityRule` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// 删除指定学校的显式覆盖规则并恢复继承全站规则；禁止对全站 * 执行删除。不存在学校覆盖时返回 409。.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	ResetEligibilityRuleWithBodyWithResponse(ctx context.Context, school string, action Action, params *ResetEligibilityRuleParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ResetEligibilityRuleResponse, error)
+
+	// ResetEligibilityRuleWithResponse performs a DELETE /api/v1/platform/eligibility/{school}/{action} (the `ResetEligibilityRule` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// 删除指定学校的显式覆盖规则并恢复继承全站规则；禁止对全站 * 执行删除。不存在学校覆盖时返回 409。.
+	ResetEligibilityRuleWithResponse(ctx context.Context, school string, action Action, params *ResetEligibilityRuleParams, body ResetEligibilityRuleJSONRequestBody, reqEditors ...RequestEditorFn) (*ResetEligibilityRuleResponse, error)
+
 	// GetEligibilityRuleWithResponse performs a GET /api/v1/platform/eligibility/{school}/{action} (the `GetEligibilityRule` operationId) request.
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -454,6 +835,220 @@ type ClientWithResponsesInterface interface {
 	// SetEligibilityRuleWithResponse performs a PUT /api/v1/platform/eligibility/{school}/{action} (the `SetEligibilityRule` operationId) request.
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	SetEligibilityRuleWithResponse(ctx context.Context, school string, action Action, params *SetEligibilityRuleParams, body SetEligibilityRuleJSONRequestBody, reqEditors ...RequestEditorFn) (*SetEligibilityRuleResponse, error)
+}
+
+type CheckEligibilityActionsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *EligibilityEvaluationBatch
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *Error
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Error
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Error
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r CheckEligibilityActionsResponse) GetJSON200() *EligibilityEvaluationBatch {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r CheckEligibilityActionsResponse) GetJSON400() *Error {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r CheckEligibilityActionsResponse) GetJSON401() *Error {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r CheckEligibilityActionsResponse) GetJSON403() *Error {
+	return r.JSON403
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r CheckEligibilityActionsResponse) GetJSON503() *Error {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r CheckEligibilityActionsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CheckEligibilityActionsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CheckEligibilityActionsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CheckEligibilityActionsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetSchoolEligibilityResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *SchoolConfiguration
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *Error
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Error
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Error
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetSchoolEligibilityResponse) GetJSON200() *SchoolConfiguration {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetSchoolEligibilityResponse) GetJSON400() *Error {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r GetSchoolEligibilityResponse) GetJSON401() *Error {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r GetSchoolEligibilityResponse) GetJSON403() *Error {
+	return r.JSON403
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r GetSchoolEligibilityResponse) GetJSON503() *Error {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r GetSchoolEligibilityResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetSchoolEligibilityResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetSchoolEligibilityResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetSchoolEligibilityResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ResetEligibilityRuleResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Rule
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *Error
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Error
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Error
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Error
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ResetEligibilityRuleResponse) GetJSON200() *Rule {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r ResetEligibilityRuleResponse) GetJSON400() *Error {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ResetEligibilityRuleResponse) GetJSON401() *Error {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ResetEligibilityRuleResponse) GetJSON403() *Error {
+	return r.JSON403
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r ResetEligibilityRuleResponse) GetJSON409() *Error {
+	return r.JSON409
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r ResetEligibilityRuleResponse) GetJSON503() *Error {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r ResetEligibilityRuleResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ResetEligibilityRuleResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ResetEligibilityRuleResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ResetEligibilityRuleResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
 }
 
 type GetEligibilityRuleResponse struct {
@@ -608,6 +1203,58 @@ func (r SetEligibilityRuleResponse) ContentType() string {
 	return ""
 }
 
+// CheckEligibilityActionsWithResponse performs a GET /api/v1/platform/eligibility-check (the `CheckEligibilityActions` operationId) request.
+//
+// 面向已登录师生前端与移动端的批量动作资格预检接口。一次返回当前账号在指定学校与动作集合上的满足状态、缺失条件与暂不可用条件。.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) CheckEligibilityActionsWithResponse(ctx context.Context, params *CheckEligibilityActionsParams, reqEditors ...RequestEditorFn) (*CheckEligibilityActionsResponse, error) {
+	rsp, err := c.CheckEligibilityActions(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCheckEligibilityActionsResponse(rsp)
+}
+
+// GetSchoolEligibilityWithResponse performs a GET /api/v1/platform/eligibility/{school} (the `GetSchoolEligibility` operationId) request.
+//
+// 读取指定学校或全站（*）全部 15 个动作的生效规则矩阵、规则来源、全站基准条件与当前范围修订号。.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) GetSchoolEligibilityWithResponse(ctx context.Context, school string, reqEditors ...RequestEditorFn) (*GetSchoolEligibilityResponse, error) {
+	rsp, err := c.GetSchoolEligibility(ctx, school, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetSchoolEligibilityResponse(rsp)
+}
+
+// ResetEligibilityRuleWithBodyWithResponse performs a DELETE /api/v1/platform/eligibility/{school}/{action} (the `ResetEligibilityRule` operationId) request,
+// with any type of body and a specified content type.
+//
+// 删除指定学校的显式覆盖规则并恢复继承全站规则；禁止对全站 * 执行删除。不存在学校覆盖时返回 409。.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) ResetEligibilityRuleWithBodyWithResponse(ctx context.Context, school string, action Action, params *ResetEligibilityRuleParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ResetEligibilityRuleResponse, error) {
+	rsp, err := c.ResetEligibilityRuleWithBody(ctx, school, action, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseResetEligibilityRuleResponse(rsp)
+}
+
+// ResetEligibilityRuleWithResponse performs a DELETE /api/v1/platform/eligibility/{school}/{action} (the `ResetEligibilityRule` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// 删除指定学校的显式覆盖规则并恢复继承全站规则；禁止对全站 * 执行删除。不存在学校覆盖时返回 409。.
+func (c *ClientWithResponses) ResetEligibilityRuleWithResponse(ctx context.Context, school string, action Action, params *ResetEligibilityRuleParams, body ResetEligibilityRuleJSONRequestBody, reqEditors ...RequestEditorFn) (*ResetEligibilityRuleResponse, error) {
+	rsp, err := c.ResetEligibilityRule(ctx, school, action, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseResetEligibilityRuleResponse(rsp)
+}
+
 // GetEligibilityRuleWithResponse performs a GET /api/v1/platform/eligibility/{school}/{action} (the `GetEligibilityRule` operationId) request.
 //
 // Returns a wrapper object for the known response body format(s).
@@ -639,6 +1286,175 @@ func (c *ClientWithResponses) SetEligibilityRuleWithResponse(ctx context.Context
 		return nil, err
 	}
 	return ParseSetEligibilityRuleResponse(rsp)
+}
+
+// ParseCheckEligibilityActionsResponse parses an HTTP response from a CheckEligibilityActionsWithResponse call
+func ParseCheckEligibilityActionsResponse(rsp *http.Response) (*CheckEligibilityActionsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CheckEligibilityActionsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest EligibilityEvaluationBatch
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetSchoolEligibilityResponse parses an HTTP response from a GetSchoolEligibilityWithResponse call
+func ParseGetSchoolEligibilityResponse(rsp *http.Response) (*GetSchoolEligibilityResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetSchoolEligibilityResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SchoolConfiguration
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseResetEligibilityRuleResponse parses an HTTP response from a ResetEligibilityRuleWithResponse call
+func ParseResetEligibilityRuleResponse(rsp *http.Response) (*ResetEligibilityRuleResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ResetEligibilityRuleResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Rule
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
 }
 
 // ParseGetEligibilityRuleResponse parses an HTTP response from a GetEligibilityRuleWithResponse call
