@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strconv"
+	"strings"
 	"time"
 
 	a "github.com/StuHelper/stuhelper-platform/admin"
@@ -62,7 +63,8 @@ func (r *Repository) Write(ctx context.Context, fn func(a.Store) error) error {
 }
 func (s adminStore) Role(ctx context.Context, id string) (out a.Role, err error) {
 	var raw []byte
-	err = s.tx.QueryRowContext(ctx, `SELECT definition FROM platform.admin_roles WHERE id=$1`, id).Scan(&raw)
+	var createdAt time.Time
+	err = s.tx.QueryRowContext(ctx, `SELECT definition,created_at FROM platform.admin_roles WHERE id=$1`, id).Scan(&raw, &createdAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return out, a.ErrNotFound
 	}
@@ -72,7 +74,49 @@ func (s adminStore) Role(ctx context.Context, id string) (out a.Role, err error)
 	if json.Unmarshal(raw, &out) != nil {
 		return out, a.ErrUnavailable
 	}
+	at := createdAt.UTC()
+	out.CreatedAt = &at
 	return
+}
+
+func escapeLike(s string) string {
+	r := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+	return r.Replace(s)
+}
+
+func (s adminStore) ListRoles(ctx context.Context, q a.RoleQuery) ([]a.Role, error) {
+	out := []a.Role{}
+	var beforeTime any
+	beforeID := ""
+	if q.Before != nil {
+		beforeTime = q.Before.CreatedAt.UTC()
+		beforeID = q.Before.ID
+	}
+	pattern := ""
+	if q.Keyword != "" {
+		pattern = "%" + escapeLike(q.Keyword) + "%"
+	}
+	rows, err := s.tx.QueryContext(ctx, `SELECT definition,created_at FROM platform.admin_roles
+ WHERE ($1='' OR id ILIKE $1 ESCAPE '\' OR (definition->>'name') ILIKE $1 ESCAPE '\')
+ AND ($2='' OR (definition->'capabilities') @> to_jsonb($2::text))
+ AND ($3::timestamptz IS NULL OR (created_at,id COLLATE "C") < ($3,$4::text COLLATE "C"))
+ ORDER BY created_at DESC,id COLLATE "C" DESC LIMIT $5`, pattern, q.Capability, beforeTime, beforeID, q.Limit)
+	if err != nil {
+		return out, adminError(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var raw []byte
+		var createdAt time.Time
+		var role a.Role
+		if rows.Scan(&raw, &createdAt) != nil || json.Unmarshal(raw, &role) != nil {
+			return out, a.ErrUnavailable
+		}
+		at := createdAt.UTC()
+		role.CreatedAt = &at
+		out = append(out, role)
+	}
+	return out, adminError(rows.Err())
 }
 func (s adminStore) Effective(ctx context.Context, subject string) (a.Effective, error) {
 	out := a.Effective{Subject: subject, Revision: "0", Grants: []a.Grant{}, AuthorizationMode: a.ExplicitGrants}
@@ -111,9 +155,151 @@ func (s adminStore) CreateRole(ctx context.Context, r a.Role) error {
 	if count >= 1000 {
 		return a.ErrConflict
 	}
-	b, _ := json.Marshal(r)
-	_, e := s.tx.ExecContext(ctx, `INSERT INTO platform.admin_roles(id,definition) VALUES($1,$2)`, r.ID, b)
+	stored := r
+	stored.CreatedAt = nil
+	b, _ := json.Marshal(stored)
+	at := time.Now().UTC()
+	if r.CreatedAt != nil {
+		at = r.CreatedAt.UTC()
+	}
+	_, e := s.tx.ExecContext(ctx, `INSERT INTO platform.admin_roles(id,definition,created_at) VALUES($1,$2,$3)`, r.ID, b, at)
 	return adminError(e)
+}
+
+func (s adminStore) ListAdministrators(ctx context.Context, q a.AdministratorQuery) ([]a.AdministratorSummary, error) {
+	out := []a.AdministratorSummary{}
+	scopes, _ := json.Marshal(q.Scopes)
+	rows, err := s.tx.QueryContext(ctx, `SELECT g.subject,sub.revision
+ FROM platform.admin_grants g
+ JOIN platform.admin_subjects sub ON sub.subject=g.subject
+ JOIN platform.admin_roles r ON r.id=g.role_id
+ WHERE ($1='' OR g.role_id=$1)
+ AND ($2='' OR (r.definition->'capabilities') @> to_jsonb($2::text))
+ AND ($3='' OR g.subject COLLATE "C" > $3 COLLATE "C")
+ AND EXISTS (SELECT 1 FROM jsonb_to_recordset($4::jsonb) AS p(school text,"group" text,module text)
+  WHERE (p.school='*' OR g.school='*' OR g.school=p.school)
+  AND (p."group"='*' OR g.group_id='*' OR g.group_id=p."group")
+  AND (p.module='*' OR g.module='*' OR g.module=p.module))
+ GROUP BY g.subject,sub.revision
+ ORDER BY g.subject COLLATE "C" ASC LIMIT $5`, q.RoleID, q.Capability, q.AfterSubject, scopes, q.Limit)
+	if err != nil {
+		return out, adminError(err)
+	}
+	subjects := []string{}
+	indexBySubject := map[string]int{}
+	for rows.Next() {
+		var subject string
+		var revision int64
+		if rows.Scan(&subject, &revision) != nil {
+			rows.Close()
+			return out, a.ErrUnavailable
+		}
+		indexBySubject[subject] = len(out)
+		subjects = append(subjects, subject)
+		out = append(out, a.AdministratorSummary{Subject: subject, Revision: strconv.FormatInt(revision, 10), Grants: []a.Grant{}})
+	}
+	if err = rows.Err(); err != nil {
+		rows.Close()
+		return out, adminError(err)
+	}
+	rows.Close()
+	if len(subjects) == 0 {
+		return out, nil
+	}
+	grantRows, err := s.tx.QueryContext(ctx, `SELECT g.subject,r.definition,g.school,g.group_id,g.module
+ FROM platform.admin_grants g
+ JOIN platform.admin_roles r ON r.id=g.role_id
+ WHERE g.subject = ANY($1::text[])
+ AND ($2='' OR g.role_id=$2)
+ AND ($3='' OR (r.definition->'capabilities') @> to_jsonb($3::text))
+ AND EXISTS (SELECT 1 FROM jsonb_to_recordset($4::jsonb) AS p(school text,"group" text,module text)
+  WHERE (p.school='*' OR g.school='*' OR g.school=p.school)
+  AND (p."group"='*' OR g.group_id='*' OR g.group_id=p."group")
+  AND (p.module='*' OR g.module='*' OR g.module=p.module))
+ ORDER BY g.subject COLLATE "C" ASC,g.role_id,g.school,g.group_id,g.module`, subjects, q.RoleID, q.Capability, scopes)
+	if err != nil {
+		return out, adminError(err)
+	}
+	defer grantRows.Close()
+	for grantRows.Next() {
+		var subject string
+		var raw []byte
+		var g a.Grant
+		if grantRows.Scan(&subject, &raw, &g.Scope.School, &g.Scope.Group, &g.Scope.Module) != nil || json.Unmarshal(raw, &g.Role) != nil {
+			return out, a.ErrUnavailable
+		}
+		idx, ok := indexBySubject[subject]
+		if !ok {
+			return out, a.ErrUnavailable
+		}
+		out[idx].Grants = append(out[idx].Grants, g)
+	}
+	return out, adminError(grantRows.Err())
+}
+
+func (s adminStore) ApplyGrantChanges(ctx context.Context, subject, expectedRevision string, add, revoke []a.GrantTarget, actor, reason string, at time.Time) (a.Revision, error) {
+	if _, e := s.tx.ExecContext(ctx, `SAVEPOINT admin_grant_change`); e != nil {
+		return a.Revision{}, adminError(e)
+	}
+	abort := func(err error) (a.Revision, error) {
+		_, _ = s.tx.ExecContext(ctx, `ROLLBACK TO SAVEPOINT admin_grant_change`)
+		return a.Revision{}, adminError(err)
+	}
+	if _, e := s.tx.ExecContext(ctx, `INSERT INTO platform.admin_subjects(subject) VALUES($1) ON CONFLICT DO NOTHING`, subject); e != nil {
+		return abort(e)
+	}
+	var revision int64
+	if e := s.tx.QueryRowContext(ctx, `SELECT revision FROM platform.admin_subjects WHERE subject=$1 FOR UPDATE`, subject).Scan(&revision); e != nil {
+		return abort(e)
+	}
+	if strconv.FormatInt(revision, 10) != expectedRevision {
+		return abort(a.ErrConflict)
+	}
+	for _, t := range revoke {
+		result, e := s.tx.ExecContext(ctx, `DELETE FROM platform.admin_grants WHERE subject=$1 AND role_id=$2 AND school=$3 AND group_id=$4 AND module=$5`, subject, t.RoleID, t.Scope.School, t.Scope.Group, t.Scope.Module)
+		if e != nil {
+			return abort(e)
+		}
+		n, e := result.RowsAffected()
+		if e != nil {
+			return abort(e)
+		}
+		if n != 1 {
+			return abort(a.ErrConflict)
+		}
+	}
+	if len(add) > 0 {
+		var count int
+		if e := s.tx.QueryRowContext(ctx, `SELECT count(*) FROM platform.admin_grants WHERE subject=$1`, subject).Scan(&count); e != nil {
+			return abort(e)
+		}
+		if count+len(add) > 1000 {
+			return abort(a.ErrConflict)
+		}
+		for _, t := range add {
+			if _, e := s.tx.ExecContext(ctx, `INSERT INTO platform.admin_grants(subject,role_id,school,group_id,module) VALUES($1,$2,$3,$4,$5)`, subject, t.RoleID, t.Scope.School, t.Scope.Group, t.Scope.Module); e != nil {
+				return abort(e)
+			}
+		}
+	}
+	if e := s.tx.QueryRowContext(ctx, `UPDATE platform.admin_subjects SET revision=revision+1 WHERE subject=$1 RETURNING revision`, subject).Scan(&revision); e != nil {
+		return abort(e)
+	}
+	revStr := strconv.FormatInt(revision, 10)
+	for _, t := range revoke {
+		if e := s.Record(ctx, a.Record{Source: "platform", Actor: actor, Action: "role.revoke", Target: subject, RoleID: t.RoleID, Revision: revStr, Scope: t.Scope, Reason: reason, Result: "success", CreatedAt: at}); e != nil {
+			return abort(e)
+		}
+	}
+	for _, t := range add {
+		if e := s.Record(ctx, a.Record{Source: "platform", Actor: actor, Action: "role.grant", Target: subject, RoleID: t.RoleID, Revision: revStr, Scope: t.Scope, Reason: reason, Result: "success", CreatedAt: at}); e != nil {
+			return abort(e)
+		}
+	}
+	if _, e := s.tx.ExecContext(ctx, `RELEASE SAVEPOINT admin_grant_change`); e != nil {
+		return a.Revision{}, adminError(e)
+	}
+	return a.Revision{Revision: revStr}, nil
 }
 func (s adminStore) Change(ctx context.Context, subject string, m a.Mutation, revoke bool) (a.Revision, error) {
 	out := a.Revision{}

@@ -28,7 +28,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** @description 分页读取不可变角色定义。需要全局或任意范围的 platform.authorization.read 能力；可信平台管理员自动满足。按创建时间与角色 ID 降序排列，游标绑定操作者与筛选条件。 */
+        get: operations["listAdminRoles"];
         put?: never;
         /** @description 只有可信平台管理员可以创建不可变角色定义。变更能力须使用新的角色 ID；角色数量上限 1000。 */
         post: operations["createAdminRole"];
@@ -107,6 +108,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/platform/admin/administrators": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description 按学校、群、业务模块、角色或能力反查当前持有显式授权的管理员列表。请求范围先与调用方的 platform.authorization.read 有效范围求交集，无交集返回 403；返回的授权范围均收窄至调用方可见范围。游标绑定操作者、筛选条件与授权范围。 */
+        get: operations["listAdministrators"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform/admin/administrators/{subject}/grant-changes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description 在单一预期修订号与事务内原子执行同一管理员的多项角色授予与撤销，仅递增一次修订号，实现新旧角色无空窗切换。禁止给自己增加授权；委托权限规则与单次授予一致。 */
+        post: operations["changeAdminGrants"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform/admin/batch-grant-changes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description 多管理员授权变更预览（dry_run=true）与逐项执行（dry_run=false）。单批最多 50 名管理员且批内 subject 不重复。dry_run=false 时必须提供 Idempotency-Key，逐项返回 succeeded、conflict、forbidden 或 not_found 状态及最新修订号。 */
+        post: operations["batchChangeAdminGrants"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -123,6 +175,11 @@ export interface components {
             id: string;
             name: string;
             capabilities: string[];
+            /**
+             * Format: date-time
+             * @description 角色创建时间；内置建议模板省略该字段。
+             */
+            created_at?: string;
         };
         AdminRoleInput: {
             role: components["schemas"]["AdminRole"];
@@ -189,6 +246,57 @@ export interface components {
             /** @enum {string} */
             code: "invalid_request" | "unauthenticated" | "forbidden" | "conflict" | "not_found" | "unavailable";
         };
+        AdminRolePage: {
+            items: components["schemas"]["AdminRole"][];
+            next_cursor: string;
+        };
+        AdminAdministratorSummary: {
+            subject: string;
+            revision: string;
+            /** @description 符合筛选条件且收窄至调用方可见范围的显式授权。 */
+            grants: components["schemas"]["AdminGrant"][];
+        };
+        AdminAdministratorPage: {
+            items: components["schemas"]["AdminAdministratorSummary"][];
+            next_cursor: string;
+        };
+        AdminGrantTarget: {
+            role_id: string;
+            scope: components["schemas"]["AdminScope"];
+        };
+        AdminGrantChangesInput: {
+            add: components["schemas"]["AdminGrantTarget"][];
+            revoke: components["schemas"]["AdminGrantTarget"][];
+            expected_revision: string;
+            reason: string;
+        };
+        AdminBatchGrantChangeItem: {
+            /** @description account.Principal.Key() 编码的 issuer 与 subject。 */
+            subject: string;
+            expected_revision: string;
+            add: components["schemas"]["AdminGrantTarget"][];
+            revoke: components["schemas"]["AdminGrantTarget"][];
+        };
+        AdminBatchGrantChangeResultItem: {
+            subject: string;
+            /** @enum {string} */
+            status: "ready" | "succeeded" | "conflict" | "forbidden" | "not_found";
+            /** @description 执行成功或预览就绪时为新修订号；冲突时为当前实际修订号；无权限或角色不存在时为空字符串。 */
+            revision: string;
+            /** @description 变更前观测到的当前修订号；无权限时为空字符串。 */
+            current_revision?: string;
+            adding: components["schemas"]["AdminGrant"][];
+            revoking: components["schemas"]["AdminGrant"][];
+        };
+        AdminBatchGrantChangesResult: {
+            dry_run: boolean;
+            items: components["schemas"]["AdminBatchGrantChangeResultItem"][];
+        };
+        AdminBatchGrantChangesInput: {
+            dry_run: boolean;
+            reason: string;
+            items: components["schemas"]["AdminBatchGrantChangeItem"][];
+        };
     };
     responses: never;
     parameters: never;
@@ -254,6 +362,67 @@ export interface operations {
             };
             /** @description 授权修订号、角色定义或幂等请求冲突 */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminError"];
+                };
+            };
+            /** @description 身份或数据库不可用 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminError"];
+                };
+            };
+        };
+    };
+    listAdminRoles: {
+        parameters: {
+            query?: {
+                keyword?: string;
+                capability?: string;
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminRolePage"];
+                };
+            };
+            /** @description 参数错误 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminError"];
+                };
+            };
+            /** @description 未登录 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminError"];
+                };
+            };
+            /** @description 能力或范围不足 */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -740,6 +909,224 @@ export interface operations {
                 };
             };
             /** @description 授权修订号、角色定义或幂等请求冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminError"];
+                };
+            };
+            /** @description 身份或数据库不可用 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminError"];
+                };
+            };
+        };
+    };
+    listAdministrators: {
+        parameters: {
+            query?: {
+                school?: string;
+                group?: string;
+                module?: string;
+                role_id?: string;
+                capability?: string;
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminAdministratorPage"];
+                };
+            };
+            /** @description 参数错误 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminError"];
+                };
+            };
+            /** @description 未登录 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminError"];
+                };
+            };
+            /** @description 能力或范围不足 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminError"];
+                };
+            };
+            /** @description 身份或数据库不可用 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminError"];
+                };
+            };
+        };
+    };
+    changeAdminGrants: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                subject: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminGrantChangesInput"];
+            };
+        };
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminRevision"];
+                };
+            };
+            /** @description 参数错误 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminError"];
+                };
+            };
+            /** @description 未登录 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminError"];
+                };
+            };
+            /** @description 能力或范围不足 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminError"];
+                };
+            };
+            /** @description 角色不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminError"];
+                };
+            };
+            /** @description 授权修订号、角色定义或幂等请求冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminError"];
+                };
+            };
+            /** @description 身份或数据库不可用 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminError"];
+                };
+            };
+        };
+    };
+    batchChangeAdminGrants: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description dry_run=false 时必填；相同幂等键重试返回原批量结果。 */
+                "Idempotency-Key"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminBatchGrantChangesInput"];
+            };
+        };
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminBatchGrantChangesResult"];
+                };
+            };
+            /** @description 参数错误 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminError"];
+                };
+            };
+            /** @description 未登录 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminError"];
+                };
+            };
+            /** @description 能力或范围不足 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminError"];
+                };
+            };
+            /** @description 幂等请求摘要冲突 */
             409: {
                 headers: {
                     [name: string]: unknown;

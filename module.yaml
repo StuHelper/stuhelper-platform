@@ -21,6 +21,8 @@ scenario_tests:
   AO-02:
     - postgres/admin_test.go#TestAdminAO02ConcurrentRevisionUniquenessAndReplay
     - postgres/admin_test.go#TestAdminHTTPAuthenticationValidationAndConflict
+  AO-03:
+    - postgres/admin_governance_test.go#TestAdminAO03AtomicAndBatchGrantChanges
   AO-04:
     - postgres/admin_test.go#TestAdminAO01AO04ScopeAndSeparateCapabilities
   PLAT-ADMIN-01:

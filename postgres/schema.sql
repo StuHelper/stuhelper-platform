@@ -10,9 +10,12 @@ CREATE INDEX IF NOT EXISTS platform_audit_expiry ON platform.audit(created_at);
 REVOKE ALL ON SCHEMA platform FROM PUBLIC;
 REVOKE ALL ON ALL TABLES IN SCHEMA platform FROM PUBLIC;
 
-CREATE TABLE IF NOT EXISTS platform.admin_roles(id text PRIMARY KEY, definition jsonb NOT NULL);
+CREATE TABLE IF NOT EXISTS platform.admin_roles(id text PRIMARY KEY, definition jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
+ALTER TABLE platform.admin_roles ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now();
+CREATE INDEX IF NOT EXISTS platform_admin_roles_order ON platform.admin_roles(created_at DESC, id COLLATE "C" DESC);
 CREATE TABLE IF NOT EXISTS platform.admin_subjects(subject text PRIMARY KEY, revision bigint NOT NULL DEFAULT 0 CHECK(revision>=0));
 CREATE TABLE IF NOT EXISTS platform.admin_grants(subject text NOT NULL REFERENCES platform.admin_subjects(subject), role_id text NOT NULL REFERENCES platform.admin_roles(id), school text NOT NULL, group_id text NOT NULL, module text NOT NULL, PRIMARY KEY(subject,role_id,school,group_id,module));
+CREATE INDEX IF NOT EXISTS platform_admin_grants_scope ON platform.admin_grants(school, group_id, module, subject);
 CREATE TABLE IF NOT EXISTS platform.admin_requests(actor text NOT NULL,key text NOT NULL,digest text NOT NULL,result jsonb NOT NULL,created_at timestamptz NOT NULL,PRIMARY KEY(actor,key));
 CREATE INDEX IF NOT EXISTS platform_admin_requests_expiry ON platform.admin_requests(created_at);
 ALTER TABLE platform.audit ADD COLUMN IF NOT EXISTS school text NOT NULL DEFAULT '*';
