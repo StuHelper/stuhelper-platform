@@ -6,8 +6,12 @@ import (
 	"database/sql"
 	_ "embed"
 	"errors"
-	e "github.com/StuHelper/stuhelper-platform/eligibility"
+	"fmt"
+	"strconv"
+	"strings"
 	"time"
+
+	e "github.com/StuHelper/stuhelper-platform/eligibility"
 )
 
 //go:embed schema.sql
@@ -15,7 +19,57 @@ var Schema string
 
 type Repository struct{ DB *sql.DB }
 
+type migrationStep struct {
+	version int
+	sql     string
+}
+
+func parseMigrations(raw string) ([]migrationStep, error) {
+	var steps []migrationStep
+	var current migrationStep
+	var buf strings.Builder
+	flush := func() error {
+		if current.version == 0 {
+			return nil
+		}
+		stmt := strings.TrimSpace(buf.String())
+		if stmt == "" {
+			return fmt.Errorf("empty migration %d", current.version)
+		}
+		current.sql = stmt
+		steps = append(steps, current)
+		buf.Reset()
+		return nil
+	}
+	for _, line := range strings.Split(raw, "\n") {
+		if after, ok := strings.CutPrefix(strings.TrimSpace(line), "-- +migration "); ok {
+			if err := flush(); err != nil {
+				return nil, err
+			}
+			v, err := strconv.Atoi(strings.TrimSpace(after))
+			if err != nil || v <= 0 || (len(steps) > 0 && v != steps[len(steps)-1].version+1) {
+				return nil, fmt.Errorf("invalid migration marker: %q", line)
+			}
+			current = migrationStep{version: v}
+			continue
+		}
+		buf.WriteString(line)
+		buf.WriteByte('\n')
+	}
+	if err := flush(); err != nil {
+		return nil, err
+	}
+	if len(steps) == 0 {
+		return nil, errors.New("no schema migrations declared")
+	}
+	return steps, nil
+}
+
 func Migrate(ctx context.Context, db *sql.DB) error {
+	steps, err := parseMigrations(Schema)
+	if err != nil {
+		return err
+	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -24,8 +78,37 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	if _, err = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(726391840111)`); err != nil {
 		return err
 	}
-	if _, err = tx.ExecContext(ctx, Schema); err != nil {
+	if _, err = tx.ExecContext(ctx, `CREATE SCHEMA IF NOT EXISTS platform; CREATE TABLE IF NOT EXISTS platform.schema_migrations(version integer PRIMARY KEY CHECK(version>0), applied_at timestamptz NOT NULL DEFAULT now()); REVOKE ALL ON SCHEMA platform FROM PUBLIC; REVOKE ALL ON platform.schema_migrations FROM PUBLIC;`); err != nil {
 		return err
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT version FROM platform.schema_migrations`)
+	if err != nil {
+		return err
+	}
+	applied := map[int]bool{}
+	for rows.Next() {
+		var v int
+		if err = rows.Scan(&v); err != nil {
+			rows.Close()
+			return err
+		}
+		applied[v] = true
+	}
+	if err = rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+	for _, step := range steps {
+		if applied[step.version] {
+			continue
+		}
+		if _, err = tx.ExecContext(ctx, step.sql); err != nil {
+			return err
+		}
+		if _, err = tx.ExecContext(ctx, `INSERT INTO platform.schema_migrations(version,applied_at) VALUES($1,now())`, step.version); err != nil {
+			return err
+		}
 	}
 	return tx.Commit()
 }

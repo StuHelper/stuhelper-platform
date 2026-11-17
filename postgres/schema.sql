@@ -1,4 +1,6 @@
+-- +migration 1
 CREATE SCHEMA IF NOT EXISTS platform;
+CREATE TABLE IF NOT EXISTS platform.schema_migrations(version integer PRIMARY KEY CHECK(version>0), applied_at timestamptz NOT NULL DEFAULT now());
 CREATE TABLE IF NOT EXISTS platform.configuration(singleton boolean PRIMARY KEY CHECK(singleton), revision bigint NOT NULL CHECK(revision>0));
 INSERT INTO platform.configuration VALUES(true,1) ON CONFLICT DO NOTHING;
 CREATE TABLE IF NOT EXISTS platform.eligibility_rules(school text NOT NULL, action text NOT NULL, conditions jsonb NOT NULL CHECK(jsonb_typeof(conditions)='array'), PRIMARY KEY(school,action));
@@ -10,6 +12,7 @@ CREATE INDEX IF NOT EXISTS platform_audit_expiry ON platform.audit(created_at);
 REVOKE ALL ON SCHEMA platform FROM PUBLIC;
 REVOKE ALL ON ALL TABLES IN SCHEMA platform FROM PUBLIC;
 
+-- +migration 2
 CREATE TABLE IF NOT EXISTS platform.admin_roles(id text PRIMARY KEY, definition jsonb NOT NULL);
 CREATE TABLE IF NOT EXISTS platform.admin_subjects(subject text PRIMARY KEY, revision bigint NOT NULL DEFAULT 0 CHECK(revision>=0));
 CREATE TABLE IF NOT EXISTS platform.admin_grants(subject text NOT NULL REFERENCES platform.admin_subjects(subject), role_id text NOT NULL REFERENCES platform.admin_roles(id), school text NOT NULL, group_id text NOT NULL, module text NOT NULL, PRIMARY KEY(subject,role_id,school,group_id,module));
@@ -26,12 +29,14 @@ CREATE INDEX IF NOT EXISTS platform_audit_target ON platform.audit(target,id DES
 CREATE INDEX IF NOT EXISTS platform_audit_action ON platform.audit(action,id DESC);
 REVOKE ALL ON ALL TABLES IN SCHEMA platform FROM PUBLIC;
 
+-- +migration 3
 ALTER TABLE platform.audit ADD COLUMN IF NOT EXISTS recorded_xid xid8 NOT NULL DEFAULT pg_current_xact_id();
 CREATE TABLE IF NOT EXISTS platform.audit_retention(singleton boolean PRIMARY KEY CHECK(singleton),revision bigint NOT NULL);
 INSERT INTO platform.audit_retention VALUES(true,1) ON CONFLICT DO NOTHING;
 CREATE INDEX IF NOT EXISTS platform_audit_merge ON platform.audit(created_at DESC,(id::text) COLLATE "C" DESC);
 REVOKE ALL ON ALL TABLES IN SCHEMA platform FROM PUBLIC;
 
+-- +migration 4
 -- Bounded visibility cache: slot reuse invalidates old tokens explicitly.
 CREATE SEQUENCE IF NOT EXISTS platform.audit_snapshot_slot;
 CREATE TABLE IF NOT EXISTS platform.audit_snapshots(
