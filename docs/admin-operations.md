@@ -1,7 +1,7 @@
 ---
 type: development
 status: InReview
-updated: 2026-11-10
+updated: 2026-11-18
 ---
 
 # 管理角色与操作记录
@@ -16,7 +16,7 @@ platform 拥有统一操作记录查询。各业务模块继续拥有原始审�
 
 OpenAPI 0.3.0 位于 contracts/admin.openapi.json。Go SDK 位于 sdk/admin，TypeScript 类型位于 sdk/admin.gen.ts。生成与兼容性检查纳入 make check。
 
-宿主使用 admin/httpapi.Handler.Register 注册 /api/v1/platform/admin 下的路由。Authenticate 必须校验当前会话，并在写请求中校验 CSRF。缺少身份适配器时返回不可用，HTTP 请求不能声明平台管理员身份。
+宿主可使用 admin/httpapi.NewRoutes 或 Handler.Routes 统一生成 transport.Route 切片（也可通过 Handler.Register 挂载至 ServeMux）。Authenticate 必须校验当前会话并在写请求中校验 CSRF，错误响应携带与 X-Request-ID 一致的 request_id。缺少身份适配器时返回不可用，HTTP 请求不能声明平台管理员身份。
 
 公开 Go 接口为 admin.Service.Evaluate(ctx, principal, capability, scope)。principal 使用 account.Principal，由可信认证结果提供。对象的学校、群和业务模块范围由所属业务 Service 提供，不能直接信任请求参数。
 

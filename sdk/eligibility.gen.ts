@@ -33,7 +33,10 @@ export interface components {
             conditions: ("content_access" | "campus_eligibility" | "phone_bound" | "identity_verified" | "course_enrollment")[];
         };
         Error: {
-            code: string;
+            /** @enum {string} */
+            code: "invalid_request" | "invalid_rule" | "unauthenticated" | "forbidden" | "conflict" | "method_not_allowed" | "unavailable";
+            /** @description 请求追踪标识，与响应头 X-Request-ID 一致。 */
+            request_id?: string;
         };
         /**
          * @description 动作目录。resources.purchase 与 membership.purchase 默认要求 campus_eligibility；登录由调用方已验证身份保证。各动作独立支持全站规则与授权范围覆盖。

@@ -141,6 +141,9 @@ type AdminEffectiveAuthorizationMode string
 // AdminError defines model for AdminError.
 type AdminError struct {
 	Code AdminErrorCode `json:"code"`
+
+	// RequestId 请求追踪标识，与响应头 X-Request-ID 一致。
+	RequestId *string `json:"request_id,omitempty"`
 }
 
 // AdminErrorCode defines model for AdminError.Code.
