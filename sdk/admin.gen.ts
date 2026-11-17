@@ -184,11 +184,20 @@ export interface components {
             missing_modules: string[];
             /** @description 当前有效授权允许查询的已装配模块。 */
             queried_modules: string[];
+            /** @description 缺失模块到原因码的映射；snapshot_expired 表示回到第一页重新查询即可恢复。 */
+            missing_reasons?: {
+                [key: string]: components["schemas"]["AdminMissingReason"];
+            };
         };
         AdminError: {
             /** @enum {string} */
             code: "invalid_request" | "unauthenticated" | "forbidden" | "conflict" | "not_found" | "unavailable";
         };
+        /**
+         * @description 审计提供方缺失原因分类。
+         * @enum {string}
+         */
+        AdminMissingReason: "snapshot_expired" | "unconfigured" | "timeout" | "unavailable";
     };
     responses: never;
     parameters: never;

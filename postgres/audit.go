@@ -3,8 +3,10 @@ package postgres
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"strconv"
 
 	a "github.com/StuHelper/stuhelper-platform/admin"
@@ -45,6 +47,9 @@ func (s adminStore) ReadAudit(ctx context.Context, q a.AuditRequest) (a.AuditBat
 			return out, a.ErrUnavailable
 		}
 		if err := s.tx.QueryRowContext(ctx, `SELECT visibility::text FROM platform.audit_snapshots WHERE token=$1 AND epoch=$2 AND created_at > statement_timestamp()-interval '24 hours'`, q.Snapshot, epoch).Scan(&visibility); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return out, a.ErrSnapshotExpired
+			}
 			return out, adminError(err)
 		}
 		out.Snapshot = q.Snapshot

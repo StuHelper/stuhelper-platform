@@ -1123,6 +1123,13 @@
             },
             "maxItems": 16,
             "description": "当前有效授权允许查询的已装配模块。"
+          },
+          "missing_reasons": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/AdminMissingReason"
+            },
+            "description": "缺失模块到原因码的映射；snapshot_expired 表示回到第一页重新查询即可恢复。"
           }
         },
         "required": [
@@ -1153,6 +1160,16 @@
         "required": [
           "code"
         ]
+      },
+      "AdminMissingReason": {
+        "type": "string",
+        "enum": [
+          "snapshot_expired",
+          "unconfigured",
+          "timeout",
+          "unavailable"
+        ],
+        "description": "审计提供方缺失原因分类。"
       }
     }
   }

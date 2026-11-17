@@ -52,28 +52,52 @@ func (e AdminEffectiveAuthorizationMode) Valid() bool {
 
 // Defines values for AdminErrorCode.
 const (
-	Conflict        AdminErrorCode = "conflict"
-	Forbidden       AdminErrorCode = "forbidden"
-	InvalidRequest  AdminErrorCode = "invalid_request"
-	NotFound        AdminErrorCode = "not_found"
-	Unauthenticated AdminErrorCode = "unauthenticated"
-	Unavailable     AdminErrorCode = "unavailable"
+	AdminErrorCodeConflict        AdminErrorCode = "conflict"
+	AdminErrorCodeForbidden       AdminErrorCode = "forbidden"
+	AdminErrorCodeInvalidRequest  AdminErrorCode = "invalid_request"
+	AdminErrorCodeNotFound        AdminErrorCode = "not_found"
+	AdminErrorCodeUnauthenticated AdminErrorCode = "unauthenticated"
+	AdminErrorCodeUnavailable     AdminErrorCode = "unavailable"
 )
 
 // Valid indicates whether the value is a known member of the AdminErrorCode enum.
 func (e AdminErrorCode) Valid() bool {
 	switch e {
-	case Conflict:
+	case AdminErrorCodeConflict:
 		return true
-	case Forbidden:
+	case AdminErrorCodeForbidden:
 		return true
-	case InvalidRequest:
+	case AdminErrorCodeInvalidRequest:
 		return true
-	case NotFound:
+	case AdminErrorCodeNotFound:
 		return true
-	case Unauthenticated:
+	case AdminErrorCodeUnauthenticated:
 		return true
-	case Unavailable:
+	case AdminErrorCodeUnavailable:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AdminMissingReason.
+const (
+	AdminMissingReasonSnapshotExpired AdminMissingReason = "snapshot_expired"
+	AdminMissingReasonTimeout         AdminMissingReason = "timeout"
+	AdminMissingReasonUnavailable     AdminMissingReason = "unavailable"
+	AdminMissingReasonUnconfigured    AdminMissingReason = "unconfigured"
+)
+
+// Valid indicates whether the value is a known member of the AdminMissingReason enum.
+func (e AdminMissingReason) Valid() bool {
+	switch e {
+	case AdminMissingReasonSnapshotExpired:
+		return true
+	case AdminMissingReasonTimeout:
+		return true
+	case AdminMissingReasonUnavailable:
+		return true
+	case AdminMissingReasonUnconfigured:
 		return true
 	default:
 		return false
@@ -109,7 +133,10 @@ type AdminAudit struct {
 type AdminAuditPage struct {
 	Items          []AdminAudit `json:"items"`
 	MissingModules []string     `json:"missing_modules"`
-	NextCursor     string       `json:"next_cursor"`
+
+	// MissingReasons 缺失模块到原因码的映射；snapshot_expired 表示回到第一页重新查询即可恢复。
+	MissingReasons *map[string]AdminMissingReason `json:"missing_reasons,omitempty"`
+	NextCursor     string                         `json:"next_cursor"`
 
 	// Partial 当前分页过程存在提供方缺失。
 	Partial bool `json:"partial"`
@@ -151,6 +178,9 @@ type AdminGrant struct {
 	Role  AdminRole  `json:"role"`
 	Scope AdminScope `json:"scope"`
 }
+
+// AdminMissingReason 审计提供方缺失原因分类。
+type AdminMissingReason string
 
 // AdminMutation defines model for AdminMutation.
 type AdminMutation struct {
