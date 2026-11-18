@@ -13,7 +13,7 @@ import (
 )
 
 type pendingAuditSnapshot struct {
-	slot       *int
+	bucket     *int
 	token      string
 	visibility string
 	epoch      int64
@@ -21,7 +21,6 @@ type pendingAuditSnapshot struct {
 
 type adminStore struct {
 	tx               *sql.Tx
-	repo             *Repository
 	pendingSnapshots []pendingAuditSnapshot
 }
 
@@ -57,7 +56,7 @@ func (r *Repository) adminTransaction(ctx context.Context, write bool, fn func(a
 			return adminError(e)
 		}
 	}
-	store := &adminStore{tx: tx, repo: r}
+	store := &adminStore{tx: tx}
 	if e = fn(store); e != nil {
 		return adminError(e)
 	}
@@ -67,21 +66,47 @@ func (r *Repository) adminTransaction(ctx context.Context, write bool, fn func(a
 	// Persist visibility snapshots only after the read-only transaction commits and
 	// releases its connection back to r.DB, preventing connection-pool self-deadlock.
 	for _, snap := range store.pendingSnapshots {
-		if snap.slot != nil {
-			_, e = r.DB.ExecContext(ctx, `INSERT INTO platform.audit_snapshots(slot,token,visibility,epoch,created_at)
- VALUES ($1,$2,$3::pg_snapshot,$4,clock_timestamp())
- ON CONFLICT(slot) DO UPDATE SET token=EXCLUDED.token,visibility=EXCLUDED.visibility,epoch=EXCLUDED.epoch,created_at=EXCLUDED.created_at`, *snap.slot, snap.token, snap.visibility, snap.epoch)
-		} else {
-			_, e = r.DB.ExecContext(ctx, `INSERT INTO platform.audit_snapshots(slot,token,visibility,epoch,created_at)
- VALUES ((nextval('platform.audit_snapshot_slot') % 4096)::integer,$1,$2::pg_snapshot,$3,clock_timestamp())
- ON CONFLICT(slot) DO UPDATE SET token=EXCLUDED.token,visibility=EXCLUDED.visibility,epoch=EXCLUDED.epoch,created_at=EXCLUDED.created_at`, snap.token, snap.visibility, snap.epoch)
-		}
-		if e != nil {
-			return adminError(e)
+		if err := r.persistAuditSnapshot(ctx, snap); err != nil {
+			return adminError(err)
 		}
 	}
 	return nil
 }
+
+func (r *Repository) persistAuditSnapshot(ctx context.Context, snap pendingAuditSnapshot) error {
+	tx, err := r.DB.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var slot int
+	if snap.bucket == nil {
+		err = tx.QueryRowContext(ctx, `SELECT nextval('platform.audit_snapshot_slot') % 4096`).Scan(&slot)
+	} else {
+		// Allocate after acquiring the bucket lock. Under READ COMMITTED the next
+		// statement sees slots committed by the previous holder on any instance.
+		if _, err = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(726391840, $1)`, *snap.bucket); err != nil {
+			return err
+		}
+		err = tx.QueryRowContext(ctx, `
+SELECT candidate.slot
+FROM generate_series($1::int, $1::int + 63) AS candidate(slot)
+LEFT JOIN platform.audit_snapshots AS saved USING (slot)
+ORDER BY saved.created_at NULLS FIRST, candidate.slot
+LIMIT 1`, *snap.bucket*64).Scan(&slot)
+	}
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO platform.audit_snapshots(slot,token,visibility,epoch,created_at)
+VALUES ($1,$2,$3::pg_snapshot,$4,clock_timestamp())
+ON CONFLICT(slot) DO UPDATE SET token=EXCLUDED.token,visibility=EXCLUDED.visibility,epoch=EXCLUDED.epoch,created_at=EXCLUDED.created_at`, slot, snap.token, snap.visibility, snap.epoch)
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 func (r *Repository) View(ctx context.Context, fn func(a.Store) error) error {
 	return r.adminTransaction(ctx, false, fn)
 }

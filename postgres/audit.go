@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"hash/fnv"
 	"strconv"
 	"strings"
 
@@ -30,14 +31,16 @@ func (s *adminStore) ReadAudit(ctx context.Context, q a.AuditRequest) (a.AuditBa
 			return out, a.ErrUnavailable
 		}
 		out.Snapshot = hex.EncodeToString(token)
-		var slot *int
-		if q.Principal.Valid() && s.repo != nil {
-			v := s.repo.nextActorSnapshotSlot(q.Principal.Key())
-			slot = &v
+		var bucket *int
+		if q.Principal.Valid() {
+			h := fnv.New32a()
+			_, _ = h.Write([]byte(q.Principal.Key()))
+			b := int(h.Sum32() % 64)
+			bucket = &b
 		}
 		// Queue snapshot persistence until after the read-only transaction commits.
 		s.pendingSnapshots = append(s.pendingSnapshots, pendingAuditSnapshot{
-			slot:       slot,
+			bucket:     bucket,
 			token:      out.Snapshot,
 			visibility: visibility,
 			epoch:      epoch,
