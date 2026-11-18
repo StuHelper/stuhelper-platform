@@ -18,6 +18,7 @@ scenario_tests:
     - eligibility/cache_test.go#TestRuleCacheDoesNotReinsertInvalidatedInFlightRead
   PLAT-HISTORY-01:
     - postgres/integration_test.go#TestInstallationFactsAreDurableMonotoneAndUnknownFailsClosed
+    - postgres/integration_test.go#TestRepositoryReadyCacheSingleflightRuntimePrivilegesAndDiagnostics
   AO-01:
     - postgres/admin_test.go#TestAdminAO01AO04ScopeAndSeparateCapabilities
     - postgres/admin_test.go#TestAdminDelegationSelfEscalationAndImmediateRevocation

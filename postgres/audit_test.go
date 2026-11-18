@@ -9,6 +9,7 @@ import (
 	ah "github.com/StuHelper/stuhelper-platform/admin/httpapi"
 	p "github.com/StuHelper/stuhelper-platform/postgres"
 	sdk "github.com/StuHelper/stuhelper-platform/sdk/admin"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -165,6 +166,8 @@ func TestAuditProvidersAuthorizationBeforeReadAndRevokedPage(t *testing.T) {
 }
 func TestAuditPartialResultsStayMarkedAndRejectBadProvider(t *testing.T) {
 	s, _ := service(t)
+	var logs strings.Builder
+	s.Logger = slog.New(slog.NewJSONHandler(&logs, nil))
 	now := time.Now().UTC()
 	r := &auditProvider{rows: []a.Record{auditRow("resources", "2", "a", now.Add(-time.Minute)), auditRow("resources", "1", "a", now.Add(-time.Minute))}}
 	v := &auditProvider{fail: true}
@@ -210,6 +213,14 @@ func TestAuditPartialResultsStayMarkedAndRejectBadProvider(t *testing.T) {
 	page, err = s.Operations(ctx, boss, f)
 	if err != nil || !page.Partial {
 		t.Fatal(page, err)
+	}
+	for _, code := range []string{"provider_error", "batch_validation_failed", "provider_timeout", "provider_unconfigured"} {
+		if !strings.Contains(logs.String(), code) {
+			t.Fatalf("missing diagnostic reason %q in %s", code, logs.String())
+		}
+	}
+	if strings.Contains(logs.String(), "synthetic provider failure") {
+		t.Fatalf("unredacted provider error leaked to logs: %s", logs.String())
 	}
 }
 func TestPlatformAuditSnapshotExcludesDelayedCommitAndDetectsRetention(t *testing.T) {

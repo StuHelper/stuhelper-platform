@@ -9,8 +9,10 @@ import (
 	h "github.com/StuHelper/stuhelper-platform/modulehistory"
 	p "github.com/StuHelper/stuhelper-platform/postgres"
 	_ "github.com/jackc/pgx/v5/stdlib"
+	"log/slog"
 	"os"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -209,6 +211,70 @@ func TestPurchaseRulesGlobalAndSchoolOverrides(t *testing.T) {
 	}
 	if _, err := s.Get(ctx, "school", "resources.unlock"); !errors.Is(err, e.ErrRule) {
 		t.Fatal("unknown action accepted", err)
+	}
+}
+
+func TestRepositoryReadyCacheSingleflightRuntimePrivilegesAndDiagnostics(t *testing.T) {
+	repo, owner := setup(t)
+	var logs strings.Builder
+	now := time.Date(2026, 11, 18, 12, 0, 0, 0, time.UTC)
+	repo.Now = func() time.Time { return now }
+	repo.Logger = slog.New(slog.NewJSONHandler(&logs, nil))
+
+	var runtimeRole string
+	if err := repo.DB.QueryRow(`SELECT current_user`).Scan(&runtimeRole); err != nil {
+		t.Fatal(err)
+	}
+
+	// A-14: missing required privileges on new tables or sequence must fail CheckRuntime and log redacted reason.
+	for _, stmt := range [][2]string{
+		{`REVOKE USAGE ON SEQUENCE platform.audit_snapshot_slot FROM ` + runtimeRole, `GRANT USAGE ON SEQUENCE platform.audit_snapshot_slot TO ` + runtimeRole},
+		{`REVOKE INSERT ON platform.audit_snapshots FROM ` + runtimeRole, `GRANT INSERT ON platform.audit_snapshots TO ` + runtimeRole},
+		{`REVOKE UPDATE ON platform.audit_retention FROM ` + runtimeRole, `GRANT UPDATE ON platform.audit_retention TO ` + runtimeRole},
+		{`REVOKE SELECT ON platform.admin_roles FROM ` + runtimeRole, `GRANT SELECT ON platform.admin_roles TO ` + runtimeRole},
+	} {
+		if _, err := owner.Exec(stmt[0]); err != nil {
+			t.Fatal(err)
+		}
+		if err := repo.CheckRuntime(ctx); !errors.Is(err, e.ErrUnavailable) {
+			t.Fatalf("expected ErrUnavailable after %q, got %v", stmt[0], err)
+		}
+		if _, err := owner.Exec(stmt[1]); err != nil {
+			t.Fatal(err)
+		}
+		if err := repo.CheckRuntime(ctx); err != nil {
+			t.Fatalf("CheckRuntime did not recover after %q: %v", stmt[1], err)
+		}
+	}
+	if !strings.Contains(logs.String(), `"reason":"db_privilege"`) {
+		t.Fatalf("expected redacted db_privilege log, got %s", logs.String())
+	}
+
+	// A-06: Ready caches positive status for 1s and re-evaluates after TTL expiry.
+	var wg sync.WaitGroup
+	for range 16 {
+		wg.Go(func() {
+			if err := repo.Ready(ctx); err != nil {
+				t.Errorf("concurrent Ready failed: %v", err)
+			}
+		})
+	}
+	wg.Wait()
+
+	// Drop configuration table: within the 1s TTL window Ready uses memory snapshot, CheckRuntime fails immediately,
+	// and after advancing past 1s TTL Ready fails closed and emits redacted sqlstate diagnostic.
+	if _, err := owner.Exec(`DROP TABLE platform.configuration`); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Ready(ctx); err != nil {
+		t.Fatalf("expected cached Ready within 1s window, got %v", err)
+	}
+	now = now.Add(2 * time.Second)
+	if err := repo.Ready(ctx); !errors.Is(err, e.ErrUnavailable) {
+		t.Fatalf("expected ErrUnavailable after Ready TTL expired, got %v", err)
+	}
+	if !strings.Contains(logs.String(), `"operation":"ready"`) || strings.Contains(logs.String(), "platform.configuration") {
+		t.Fatalf("unexpected diagnostic log content: %s", logs.String())
 	}
 }
 
