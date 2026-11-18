@@ -1,19 +1,43 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { importError } from './check-boundaries.mjs';
 const owner = 'github.com/StuHelper/stuhelper-reviews';
 const catalog = 'github.com/StuHelper/stuhelper-catalog';
+const platform = 'github.com/StuHelper/stuhelper-platform';
 test('business modules use contracts and public framework APIs, never another implementation', () => {
   assert.equal(importError(owner, `${owner}/service`, `${catalog}/api`), undefined);
   assert.match(importError(owner, `${owner}/service`, `${catalog}/repository`), /Cross-module/);
-  assert.equal(importError(owner, `${owner}/module`, 'github.com/StuHelper/stuhelper-platform/module'), undefined);
-  assert.equal(importError(owner, `${owner}/handler`, 'github.com/StuHelper/stuhelper-platform/transport'), undefined);
-  assert.match(importError(owner, `${owner}/service`, 'github.com/StuHelper/stuhelper-platform/internal/composition'), /Cross-module/);
+  assert.equal(importError(owner, `${owner}/module`, `${platform}/module`), undefined);
+  assert.equal(importError(owner, `${owner}/handler`, `${platform}/transport`), undefined);
+  assert.equal(importError(owner, `${owner}/service`, `${platform}/account`), undefined);
+  assert.equal(importError(owner, `${owner}/service`, `${platform}/admin`), undefined);
+  assert.equal(importError(owner, `${owner}/service`, `${platform}/eligibility`), undefined);
+  assert.equal(importError(owner, `${owner}/service`, `${platform}/modulehistory`), undefined);
+  assert.equal(importError(owner, `${owner}/service`, `${platform}/sdk`), undefined);
+  assert.equal(importError(owner, `${owner}/service`, `${platform}/sdk/admin`), undefined);
+  assert.match(importError(owner, `${owner}/service`, `${platform}/postgres`), /Cross-module/);
+  assert.match(importError(owner, `${owner}/service`, `${platform}/internal/composition`), /Cross-module/);
   assert.equal(importError(owner, `${owner}/cmd/server`, `${catalog}/module`), undefined);
+  assert.equal(importError(owner, `${owner}/cmd/server`, `${platform}/postgres`), undefined);
 });
 test('HTTP adapters cannot skip services and repositories cannot depend on upper layers', () => {
   assert(importError(owner, `${owner}/handler`, `${owner}/repository`));
   assert(importError(owner, `${owner}/repository`, `${owner}/service`));
   assert(importError(owner, `${owner}/service`, `${owner}/handler`));
   assert.equal(importError(owner, `${owner}/service`, `${owner}/repository`), undefined);
+  assert.match(importError(platform, `${platform}/admin/httpapi`, `${platform}/postgres`), /Handler bypasses service/);
+  assert.match(importError(platform, `${platform}/eligibility/httpapi`, `${platform}/postgres`), /Handler bypasses service/);
+  assert.match(importError(platform, `${platform}/transport`, `${platform}/postgres`), /Handler bypasses service/);
+  assert.match(importError(platform, `${platform}/postgres`, `${platform}/admin/httpapi`), /Repository depends on an upper layer/);
+  assert.match(importError(platform, `${platform}/postgres`, `${platform}/transport`), /Repository depends on an upper layer/);
+  assert.match(importError(platform, `${platform}/postgres`, `${platform}/application`), /Repository depends on an upper layer/);
+  assert.match(importError(platform, `${platform}/admin`, `${platform}/admin/httpapi`), /Service depends on handler/);
+  assert.match(importError(platform, `${platform}/admin`, `${platform}/postgres`), /Service depends on concrete postgres adapter/);
+  assert.equal(importError(platform, `${platform}/postgres`, `${platform}/admin`), undefined);
+  assert.equal(importError(platform, `${platform}/admin/httpapi`, `${platform}/admin`), undefined);
+});
+test('Makefile gofmt check covers account and all non-generated Go packages', () => {
+  const makefile = fs.readFileSync('Makefile', 'utf8');
+  assert.ok(makefile.includes('account') || makefile.includes("find . -name '*.go'"), 'Makefile gofmt check must cover account package');
 });

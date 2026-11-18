@@ -49,3 +49,15 @@ CREATE TABLE IF NOT EXISTS platform.audit_snapshots(
 CREATE INDEX IF NOT EXISTS platform_audit_snapshots_expiry ON platform.audit_snapshots(created_at);
 REVOKE ALL ON platform.audit_snapshots FROM PUBLIC;
 REVOKE ALL ON SEQUENCE platform.audit_snapshot_slot FROM PUBLIC;
+
+-- +migration 5
+CREATE TABLE IF NOT EXISTS platform.eligibility_revisions(school text PRIMARY KEY, revision bigint NOT NULL CHECK(revision>0));
+INSERT INTO platform.eligibility_revisions(school,revision) SELECT '*',revision FROM platform.configuration WHERE singleton ON CONFLICT(school) DO NOTHING;
+INSERT INTO platform.eligibility_revisions(school,revision) SELECT DISTINCT r.school,c.revision FROM platform.eligibility_rules r CROSS JOIN platform.configuration c WHERE c.singleton ON CONFLICT(school) DO NOTHING;
+ALTER TABLE platform.admin_roles ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now();
+CREATE INDEX IF NOT EXISTS platform_admin_roles_order ON platform.admin_roles(created_at DESC, id COLLATE "C" DESC);
+CREATE INDEX IF NOT EXISTS platform_admin_grants_scope ON platform.admin_grants(school, group_id, module, subject);
+CREATE INDEX IF NOT EXISTS platform_audit_scope_merge ON platform.audit(school,group_id,module,created_at DESC,(id::text) COLLATE "C" DESC);
+CREATE INDEX IF NOT EXISTS platform_audit_actor_merge ON platform.audit(actor,created_at DESC,(id::text) COLLATE "C" DESC);
+CREATE INDEX IF NOT EXISTS platform_audit_target_merge ON platform.audit(target,created_at DESC,(id::text) COLLATE "C" DESC);
+CREATE INDEX IF NOT EXISTS platform_audit_action_merge ON platform.audit(action,created_at DESC,(id::text) COLLATE "C" DESC);

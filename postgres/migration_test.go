@@ -12,8 +12,8 @@ func TestIncrementalMigrationSkipsAppliedVersionsWithoutAuditTableLock(t *testin
 	repo, owner := setup(t)
 
 	var appliedCount int
-	if err := owner.QueryRow(`SELECT count(*) FROM platform.schema_migrations`).Scan(&appliedCount); err != nil || appliedCount != 4 {
-		t.Fatalf("expected 4 applied migrations, got %d (err=%v)", appliedCount, err)
+	if err := owner.QueryRow(`SELECT count(*) FROM platform.schema_migrations`).Scan(&appliedCount); err != nil || appliedCount != 5 {
+		t.Fatalf("expected 5 applied migrations, got %d (err=%v)", appliedCount, err)
 	}
 
 	// Hold an active ACCESS SHARE lock on platform.audit via a runtime read transaction.
@@ -34,5 +34,27 @@ func TestIncrementalMigrationSkipsAppliedVersionsWithoutAuditTableLock(t *testin
 	defer cancel()
 	if err = p.Migrate(migCtx, owner); err != nil {
 		t.Fatalf("incremental Migrate blocked or failed while platform.audit was read-locked: %v", err)
+	}
+}
+
+func TestIncrementalMigrationPreservesExistingSchoolRevisions(t *testing.T) {
+	_, owner := setup(t)
+	// Recreate the pre-v5 rows in this test's isolated database.
+	if _, err := owner.Exec(`DELETE FROM platform.schema_migrations WHERE version=5;
+DROP TABLE platform.eligibility_revisions;
+ALTER TABLE platform.admin_roles DROP COLUMN created_at;
+UPDATE platform.configuration SET revision=7 WHERE singleton;
+INSERT INTO platform.eligibility_rules(school,action,conditions) VALUES ('existing-school','content.enter','["content_access"]');
+INSERT INTO platform.admin_roles(id,definition) VALUES ('existing-role','{}')`); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Migrate(ctx, owner); err != nil {
+		t.Fatal(err)
+	}
+	var revision int
+	var present bool
+	if err := owner.QueryRow(`SELECT revision, EXISTS(SELECT 1 FROM platform.admin_roles WHERE id='existing-role' AND created_at IS NOT NULL)
+FROM platform.eligibility_revisions WHERE school='existing-school'`).Scan(&revision, &present); err != nil || revision != 7 || !present {
+		t.Fatalf("upgraded data: revision=%d role=%t error=%v", revision, present, err)
 	}
 }

@@ -90,3 +90,15 @@ func TestAdminHTTPHandlerValidationWithoutPostgres(t *testing.T) {
 		t.Fatalf("expected 400 missing Idempotency-Key, got %d", w.Code)
 	}
 }
+
+func (noopStore) ListRoles(context.Context, admin.RoleQuery) ([]admin.Role, error) {
+	return nil, admin.ErrUnavailable
+}
+
+func (noopStore) ListAdministrators(context.Context, admin.AdministratorQuery) ([]admin.AdministratorSummary, error) {
+	return nil, admin.ErrUnavailable
+}
+
+func (noopStore) ApplyGrantChanges(context.Context, string, string, []admin.GrantTarget, []admin.GrantTarget, string, string, time.Time) (admin.Revision, error) {
+	return admin.Revision{}, admin.ErrUnavailable
+}

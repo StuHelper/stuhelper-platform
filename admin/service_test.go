@@ -226,3 +226,15 @@ func TestInMemoryAdminServiceAuthorizationDelegationAndReplay(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func (*memStore) ListRoles(context.Context, admin.RoleQuery) ([]admin.Role, error) {
+	return nil, admin.ErrUnavailable
+}
+
+func (*memStore) ListAdministrators(context.Context, admin.AdministratorQuery) ([]admin.AdministratorSummary, error) {
+	return nil, admin.ErrUnavailable
+}
+
+func (*memStore) ApplyGrantChanges(context.Context, string, string, []admin.GrantTarget, []admin.GrantTarget, string, string, time.Time) (admin.Revision, error) {
+	return admin.Revision{}, admin.ErrUnavailable
+}

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"slices"
 	"strconv"
 	"strings"
@@ -20,6 +21,7 @@ type Service struct {
 	Repo           Repository
 	Identity       Identity
 	Now            func() time.Time
+	Logger         *slog.Logger
 }
 
 func (s Service) now() time.Time {
@@ -150,6 +152,7 @@ func digest(v any) string {
 	return hex.EncodeToString(d[:])
 }
 func (s Service) CreateRole(ctx context.Context, p account.Principal, key string, in RoleInput) (out Role, err error) {
+	in.Role.CreatedAt = nil
 	if !validRole(in.Role) || !clean(in.Reason, 512) || !clean(key, 128) {
 		return out, ErrInvalid
 	}
@@ -171,11 +174,13 @@ func (s Service) CreateRole(ctx context.Context, p account.Principal, key string
 		if b != nil {
 			return json.Unmarshal(b, &out)
 		}
-		if e = st.CreateRole(ctx, in.Role); e != nil {
+		at := s.now()
+		created := in.Role
+		created.CreatedAt = &at
+		if e = st.CreateRole(ctx, created); e != nil {
 			return e
 		}
-		out = in.Role
-		at := s.now()
+		out = created
 		if e = st.Record(ctx, Record{Source: "platform", Actor: p.Key(), Action: "role.create", Target: out.ID, Scope: Global, Reason: in.Reason, Result: "success", CreatedAt: at}); e != nil {
 			return e
 		}
