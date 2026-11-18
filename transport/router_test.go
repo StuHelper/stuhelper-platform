@@ -14,9 +14,15 @@ import (
 	"go.uber.org/fx"
 )
 
-type authenticator struct{ err error }
+type authenticator struct {
+	principal *Principal
+	err       error
+}
 
 func (a authenticator) Authenticate(*http.Request) (Principal, error) {
+	if a.principal != nil {
+		return *a.principal, a.err
+	}
 	return Principal{Issuer: "test-issuer", Subject: "synthetic-user"}, a.err
 }
 
@@ -96,8 +102,11 @@ func TestProtectedRouteNeverBypassesMissingOrDeniedAuthorization(t *testing.T) {
 		status int
 	}{
 		{"missing", nil, nil, 503},
-		{"anonymous", authenticator{ErrUnauthenticated}, authorizer{}, 401},
-		{"identity unavailable", authenticator{ErrUnavailable}, authorizer{}, 503},
+		{"anonymous", authenticator{err: ErrUnauthenticated}, authorizer{}, 401},
+		{"csrf or revoked authn forbidden", authenticator{err: ErrForbidden}, authorizer{}, 403},
+		{"invalid control char principal", authenticator{principal: &Principal{Issuer: "bad\x00issuer", Subject: "user"}}, authorizer{}, 401},
+		{"invalid utf8 principal", authenticator{principal: &Principal{Issuer: "issuer", Subject: "bad\xffuser"}}, authorizer{}, 401},
+		{"identity unavailable", authenticator{err: ErrUnavailable}, authorizer{}, 503},
 		{"denied", authenticator{}, authorizer{ErrForbidden}, 403},
 		{"policy unavailable", authenticator{}, authorizer{ErrUnavailable}, 503},
 		{"authorized", authenticator{}, authorizer{}, 200},
@@ -167,6 +176,36 @@ func TestPanicDoesNotExposeDetails(t *testing.T) {
 	h.ServeHTTP(w, httptest.NewRequest("GET", "/api/v1/example", nil))
 	if w.Code != 500 || strings.Contains(w.Body.String()+logs.String(), "private fixture detail") {
 		t.Fatal("panic detail exposed")
+	}
+}
+
+func TestPublicRouteOptionalSourceLimiter(t *testing.T) {
+	limiter := &SourceLimiter{Limit: 2}
+	route := Route{
+		Method:     "GET",
+		Path:       "/api/v1/example",
+		Module:     "example",
+		Capability: "example.read",
+		Access:     Public,
+		Limiter:    limiter,
+		Handler:    http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { JSON(w, 200, map[string]bool{"ok": true}) }),
+	}
+	h, err := NewHandler(registry(t, true), []Route{route}, nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range 3 {
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", "/api/v1/example", nil)
+		req.RemoteAddr = "198.51.100.10:12345"
+		h.ServeHTTP(w, req)
+		want := 200
+		if i == 2 {
+			want = 429
+		}
+		if w.Code != want {
+			t.Fatalf("attempt %d: got %d body %s", i, w.Code, w.Body.String())
+		}
 	}
 }
 

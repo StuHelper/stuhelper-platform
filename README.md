@@ -14,7 +14,9 @@ make run
 
 默认监听 127.0.0.1:8080，可通过 STUHELPER_LISTEN 修改。STUHELPER_MODULES 默认 platform。公开示例尚未安装其他业务模块，未知模块配置会失败。
 
-`/healthz` 检查进程存活，`/readyz` 检查显式声明的关键模块及其必需依赖，`/api/v1/system/capabilities` 返回可用能力。能力列表不表示用户获得权限。管理接口在身份适配器接入前返回 identity_unavailable，不签发或接受演示管理员身份。
+`/healthz` 检查进程存活，`/readyz` 检查显式声明的关键模块及其必需依赖，`/api/v1/system/capabilities` 返回可用能力。能力列表不表示用户获得权限。管理接口在身份适配器接入前返回 identity_unavailable，认证拒绝返回 permission_denied。
+
+单次请求共享模块可用性判定，`postgres.Repository.Ready` 提供 1 秒单飞健康快照。停机时为 HTTP 排空划分独立子预算，确保业务模块 `OnStop` 正常执行。
 
 ## 模块开发
 
@@ -55,4 +57,6 @@ admin 提供不可变角色定义、学校／群／业务模块授权、即时�
 
 宿主通过 admin/httpapi.Handler.Register 装配路由，并提供当前身份及会话／CSRF 校验。公开示例未装配管理员身份。权限、数据库配置、AO 场景及 backend 后续接入步骤见[管理角色实现说明](docs/admin-operations.md)。
 
-资格动作 resources.purchase 与 membership.purchase 默认要求 campus_eligibility，登录由调用方已验证身份保证。两个动作独立配置全站规则与学校覆盖，购买条件调整不改变下载规则或既有权益。配置 API 的动作目录由 eligibility OpenAPI 0.2.0 与生成 SDK 描述。
+资格动作 resources.purchase 与 membership.purchase 默认要求 campus_eligibility，登录由调用方已验证身份保证。两个动作独立配置全站规则与学校覆盖，购买条件调整不改变下载规则或既有权益。学校规则矩阵读取、覆盖恢复与用户侧动作预检契约由 eligibility OpenAPI 0.3.0 与生成 SDK 描述。
+
+仅 publish_course 支持配置 course_enrollment，其余动作仅允许已接入的通用条件。Admission 缺少规则源时直接返回不可用。

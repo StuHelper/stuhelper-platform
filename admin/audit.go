@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"regexp"
 	"slices"
 	"sort"
@@ -140,6 +141,34 @@ func (s Service) authorizationScopes(ctx context.Context, p account.Principal, f
 			return nil, err
 		}
 	}
+	permittedScope := false
+	for _, g := range granted {
+		if _, ok := f.Scope.Intersection(g); ok {
+			permittedScope = true
+			break
+		}
+	}
+	if !permittedScope {
+		return nil, ErrForbidden
+	}
+	if len(f.Sources) > 0 {
+		for _, name := range names {
+			sourceScope := f.Scope
+			if name != "platform" {
+				sourceScope = Scope{School: f.Scope.School, Group: f.Scope.Group, Module: name}
+			}
+			allowedSource := false
+			for _, g := range granted {
+				if _, ok := sourceScope.Intersection(g); ok {
+					allowedSource = true
+					break
+				}
+			}
+			if !allowedSource {
+				return nil, ErrForbidden
+			}
+		}
+	}
 	out := map[string][]Scope{}
 	for _, name := range names {
 		requested := f.Scope
@@ -162,15 +191,8 @@ func (s Service) authorizationScopes(ctx context.Context, p account.Principal, f
 		}
 		slices.SortFunc(out[name], func(a, b Scope) int { return strings.Compare(digest(a), digest(b)) })
 	}
-	if len(out) == 0 {
+	if len(f.Sources) == 0 && len(out) == 0 {
 		return nil, ErrForbidden
-	}
-	if len(f.Sources) > 0 {
-		for _, name := range names {
-			if len(out[name]) == 0 {
-				return nil, ErrForbidden
-			}
-		}
 	}
 	return out, nil
 }
@@ -182,6 +204,9 @@ func decodeAuditCursor(f Filter, binding, authorization string, names []string, 
 	c := auditCursor{Version: 1, Binding: binding, Authorization: authorization, Until: until, Snapshots: map[string]string{}, Missing: []string{}}
 	if f.Cursor == "" {
 		return c, nil
+	}
+	if !f.From.IsZero() && !f.From.Before(c.Until) {
+		return c, ErrInvalid
 	}
 	raw, err := base64.RawURLEncoding.DecodeString(f.Cursor)
 	if err != nil {
@@ -282,6 +307,9 @@ func (s Service) Operations(ctx context.Context, p account.Principal, f Filter) 
 	if err != nil {
 		return out, err
 	}
+	if !f.From.IsZero() && !f.From.Before(c.Until) {
+		return out, nil
+	}
 	records := []Record{}
 	// At most 16 providers, with 250 ms per provider and 101 records per read.
 	// Calls are sequential to bound in-flight work; adapters must honor context.
@@ -292,11 +320,13 @@ func (s Service) Operations(ctx context.Context, p account.Principal, f Filter) 
 		q := AuditRequest{Principal: p, Scopes: scopes[name], Actor: f.Actor, Target: f.Target, Action: f.Action, From: f.From, Until: c.Until, Before: c.Before, Snapshot: c.Snapshots[name], Limit: f.Limit + 1}
 		call, stop := context.WithTimeout(ctx, 250*time.Millisecond)
 		var batch AuditBatch
+		unconfigured := false
 		if name == "platform" {
 			err = s.Repo.View(call, func(st Store) error { var e error; batch, e = st.ReadAudit(call, q); return e })
 		} else if provider := s.AuditProviders[name]; provider != nil {
 			batch, err = provider.ReadAudit(call, q)
 		} else {
+			unconfigured = true
 			err = ErrUnavailable
 		}
 		if call.Err() != nil {
@@ -304,6 +334,18 @@ func (s Service) Operations(ctx context.Context, p account.Principal, f Filter) 
 		}
 		stop()
 		if err != nil || !validateBatch(name, q, batch) {
+			if s.Logger != nil {
+				reason := "provider_error"
+				switch {
+				case unconfigured:
+					reason = "provider_unconfigured"
+				case errors.Is(err, context.DeadlineExceeded):
+					reason = "provider_timeout"
+				case err == nil:
+					reason = "batch_validation_failed"
+				}
+				s.Logger.Warn("audit provider degraded", "module", name, "reason", reason)
+			}
 			c.Missing = append(c.Missing, name)
 			continue
 		}

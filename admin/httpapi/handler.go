@@ -17,11 +17,15 @@ import (
 
 var routePatterns = []string{
 	"GET /role-templates",
+	"GET /roles",
 	"POST /roles",
 	"GET /roles/{role}",
+	"GET /administrators",
 	"GET /administrators/{subject}/effective",
 	"PUT /administrators/{subject}/grants",
 	"DELETE /administrators/{subject}/grants",
+	"POST /administrators/{subject}/grant-changes",
+	"POST /batch-grant-changes",
 	"GET /operations",
 }
 
@@ -94,16 +98,19 @@ func split(s string) (string, string) {
 	}
 	return s, ""
 }
-func decode(w http.ResponseWriter, r *http.Request, out any) error {
-	if len(r.Header.Values("Idempotency-Key")) != 1 {
-		return a.ErrInvalid
-	}
-	d := json.NewDecoder(http.MaxBytesReader(w, r.Body, 32768))
+func decodeBody(w http.ResponseWriter, r *http.Request, out any, maxBytes int64) error {
+	d := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBytes))
 	d.DisallowUnknownFields()
 	if d.Decode(out) != nil || d.Decode(new(any)) != io.EOF {
 		return a.ErrInvalid
 	}
 	return nil
+}
+func decode(w http.ResponseWriter, r *http.Request, out any) error {
+	if len(r.Header.Values("Idempotency-Key")) != 1 {
+		return a.ErrInvalid
+	}
+	return decodeBody(w, r, out, 32768)
 }
 func failure(w http.ResponseWriter, requestID string, err error) {
 	code, status := "unavailable", 503
@@ -159,13 +166,57 @@ func (h Handler) serve(w http.ResponseWriter, r *http.Request) {
 		// Templates disclose only public suggestions, but still require a live identity.
 		_, err = h.Service.Effective(r.Context(), p, p.Key(), a.Global)
 		out = a.Templates()
-	case r.Method == "POST":
+	case r.URL.Path == "/api/v1/platform/admin/roles" && r.Method == "GET":
+		rf := a.RoleFilter{Keyword: q.Get("keyword"), Capability: q.Get("capability"), Cursor: q.Get("cursor"), Limit: 50}
+		if q.Has("limit") {
+			rf.Limit, err = strconv.Atoi(q.Get("limit"))
+		}
+		if err != nil {
+			err = a.ErrInvalid
+		} else {
+			out, err = h.Service.ListRoles(r.Context(), p, rf)
+		}
+	case r.URL.Path == "/api/v1/platform/admin/roles" && r.Method == "POST":
 		var in a.RoleInput
 		if err = decode(w, r, &in); err == nil {
 			out, err = h.Service.CreateRole(r.Context(), p, r.Header.Get("Idempotency-Key"), in)
 		}
 	case r.PathValue("role") != "":
 		out, err = h.Service.Role(r.Context(), p, r.PathValue("role"))
+	case r.URL.Path == "/api/v1/platform/admin/administrators" && r.Method == "GET":
+		af := a.AdministratorFilter{Scope: scope, RoleID: q.Get("role_id"), Capability: q.Get("capability"), Cursor: q.Get("cursor"), Limit: 50}
+		if q.Has("limit") {
+			af.Limit, err = strconv.Atoi(q.Get("limit"))
+		}
+		if err != nil {
+			err = a.ErrInvalid
+		} else {
+			out, err = h.Service.ListAdministrators(r.Context(), p, af)
+		}
+	case r.URL.Path == "/api/v1/platform/admin/batch-grant-changes" && r.Method == "POST":
+		keys := r.Header.Values("Idempotency-Key")
+		if len(keys) > 1 {
+			err = a.ErrInvalid
+		} else {
+			var wire struct {
+				DryRun *bool                    `json:"dry_run"`
+				Reason string                   `json:"reason"`
+				Items  []a.BatchGrantChangeItem `json:"items"`
+			}
+			if err = decodeBody(w, r, &wire, 131072); err == nil {
+				if wire.DryRun == nil || (!*wire.DryRun && len(keys) != 1) {
+					err = a.ErrInvalid
+				} else {
+					in := a.BatchGrantChangesInput{DryRun: *wire.DryRun, Reason: wire.Reason, Items: wire.Items}
+					out, err = h.Service.BatchChangeGrants(r.Context(), p, r.Header.Get("Idempotency-Key"), in)
+				}
+			}
+		}
+	case r.Method == "POST" && r.PathValue("subject") != "":
+		var in a.GrantChangesInput
+		if err = decode(w, r, &in); err == nil {
+			out, err = h.Service.ChangeGrants(r.Context(), p, r.PathValue("subject"), r.Header.Get("Idempotency-Key"), in)
+		}
 	case r.Method == "PUT" || r.Method == "DELETE":
 		var in a.Mutation
 		if err = decode(w, r, &in); err == nil {

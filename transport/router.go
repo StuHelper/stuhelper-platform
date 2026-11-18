@@ -10,6 +10,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -47,6 +48,8 @@ type Route struct {
 	Method, Path, Module, Capability string
 	Access                           Access
 	Resource                         func(*http.Request) Resource
+	Limiter                          *SourceLimiter
+	Source                           func(*http.Request) string
 	Handler                          http.Handler
 }
 
@@ -108,6 +111,16 @@ func problem(w http.ResponseWriter, r *http.Request, status int, code string) {
 	JSON(w, status, gen.Problem{Code: code, RequestId: RequestID(r.Context())})
 }
 
+func requestSource(r *http.Request, extractor func(*http.Request) string) string {
+	if extractor != nil {
+		return extractor(r)
+	}
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil && host != "" {
+		return host
+	}
+	return r.RemoteAddr
+}
+
 // NewHandler rejects ambiguous registrations and requires explicit public or
 // protected access. An absent identity adapter never implies anonymous access.
 func NewHandler(registry *module.Registry, routes []Route, authn Authenticator, authz Authorizer, logger *slog.Logger) (handler http.Handler, err error) {
@@ -139,6 +152,10 @@ func NewHandler(registry *module.Registry, routes []Route, authn Authenticator, 
 			unavailableCode = h.code
 		}
 		mux.Handle(route.Method+" "+route.Path, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if route.Limiter != nil && !route.Limiter.Allow(requestSource(r, route.Source)) {
+				problem(w, r, http.StatusTooManyRequests, "rate_limited")
+				return
+			}
 			ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 			available := registry.CapabilityAvailable(ctx, route.Module, route.Capability)
 			cancel()
@@ -152,10 +169,13 @@ func NewHandler(registry *module.Registry, routes []Route, authn Authenticator, 
 					return
 				}
 				principal, err := authn.Authenticate(r)
-				if err != nil || principal.Issuer == "" || principal.Subject == "" {
-					if errors.Is(err, ErrUnavailable) {
+				if err != nil || !principal.Valid() {
+					switch {
+					case errors.Is(err, ErrUnavailable):
 						problem(w, r, 503, "identity_unavailable")
-					} else {
+					case errors.Is(err, ErrForbidden):
+						problem(w, r, 403, "permission_denied")
+					default:
 						problem(w, r, 401, "authentication_required")
 					}
 					return
@@ -215,6 +235,7 @@ func NewHandler(registry *module.Registry, routes []Route, authn Authenticator, 
 			http.Error(w, "request unavailable", 503)
 			return
 		}
+		r = r.WithContext(module.WithAvailabilityCache(r.Context()))
 		defer func() {
 			if recovered := recover(); recovered != nil {
 				if recovered == http.ErrAbortHandler {

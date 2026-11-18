@@ -304,4 +304,11 @@ func TestOptionalDependencyDeclarationValidation(t *testing.T) {
 	if _, err := New([]Definition{reviews}, []string{"reviews"}); err == nil {
 		t.Fatal("undeclared capability dependency accepted")
 	}
+	for _, badCap := range []string{"reviews.", "reviews..read", ".read"} {
+		bad := definition("reviews")
+		bad.Descriptor.Capabilities = []string{badCap}
+		if _, err := New([]Definition{bad}, []string{"reviews"}); err == nil {
+			t.Fatalf("malformed capability %q accepted", badCap)
+		}
+	}
 }
