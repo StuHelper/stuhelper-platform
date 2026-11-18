@@ -13,6 +13,9 @@ import (
 )
 
 func (r *Repository) Effective(ctx context.Context, action, school string) (e.Rule, error) {
+	if !e.ValidSchool(school) {
+		return e.Rule{}, e.ErrRule
+	}
 	rule, err := (e.Defaults{}).Effective(ctx, action, school)
 	if err != nil {
 		return rule, err
@@ -30,7 +33,7 @@ func (r *Repository) Effective(ctx context.Context, action, school string) (e.Ru
 	if raw != nil && json.Unmarshal(raw, &rule.Conditions) != nil {
 		return e.Rule{}, e.ErrUnavailable
 	}
-	if e.Validate(rule) != nil {
+	if e.ValidateAction(action, rule) != nil {
 		return e.Rule{}, e.ErrUnavailable
 	}
 	return rule, nil

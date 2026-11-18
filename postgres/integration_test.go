@@ -211,3 +211,55 @@ func TestPurchaseRulesGlobalAndSchoolOverrides(t *testing.T) {
 		t.Fatal("unknown action accepted", err)
 	}
 }
+
+func TestEligibilityActionWhitelistAndMalformedInputsNeverReturn503(t *testing.T) {
+	repo, owner := setup(t)
+	s := e.Service{Repo: repo}
+
+	// Unsupported course_enrollment on non-course-review actions returns ErrRule and writes nothing.
+	for _, action := range []string{"content.enter", "resources.upload", "membership.purchase"} {
+		if _, err := s.Set(ctx, "admin", "bad-"+action, "buaa", action, e.Change{ExpectedVersion: "1", Conditions: []e.Condition{e.Enrollment}}); !errors.Is(err, e.ErrRule) {
+			t.Fatalf("%s: expected ErrRule, got %v", action, err)
+		}
+	}
+	var count int
+	if err := owner.QueryRow(`SELECT count(*) FROM platform.eligibility_rules`).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("rejected rules persisted: count=%d err=%v", count, err)
+	}
+	if err := owner.QueryRow(`SELECT count(*) FROM platform.audit`).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("rejected rules wrote audit: count=%d err=%v", count, err)
+	}
+
+	// Malformed UTF-8, NUL, whitespace and overlong school/key/actor/version return ErrRule, never ErrUnavailable.
+	for _, badSchool := range []string{"", "   ", "buaa ", "\xff", "buaa\x00"} {
+		if _, err := s.Get(ctx, badSchool, "content.enter"); !errors.Is(err, e.ErrRule) {
+			t.Fatalf("Get(%q): expected ErrRule, got %v", badSchool, err)
+		}
+		if _, err := s.Set(ctx, "admin", "valid-key", badSchool, "content.enter", e.Change{ExpectedVersion: "1", Conditions: []e.Condition{}}); !errors.Is(err, e.ErrRule) {
+			t.Fatalf("Set(school=%q): expected ErrRule, got %v", badSchool, err)
+		}
+	}
+	if _, err := s.Set(ctx, "admin", "key\xff", "buaa", "content.enter", e.Change{ExpectedVersion: "1", Conditions: []e.Condition{}}); !errors.Is(err, e.ErrRule) {
+		t.Fatalf("Set(bad key): expected ErrRule, got %v", err)
+	}
+	if _, err := s.Set(ctx, "admin\xff", "valid-key", "buaa", "content.enter", e.Change{ExpectedVersion: "1", Conditions: []e.Condition{}}); !errors.Is(err, e.ErrRule) {
+		t.Fatalf("Set(bad actor): expected ErrRule, got %v", err)
+	}
+
+	// Supported course_enrollment on publish_course persists rule and audit atomically.
+	rule, err := s.Set(ctx, "admin", "ok-course", "buaa", "publish_course", e.Change{ExpectedVersion: "1", Conditions: []e.Condition{e.Campus, e.Enrollment}})
+	if err != nil || rule.Version != "2" || len(rule.SupportedConditions) != 5 {
+		t.Fatalf("publish_course Set failed: %+v, %v", rule, err)
+	}
+	if err := owner.QueryRow(`SELECT count(*) FROM platform.eligibility_rules WHERE school='buaa' AND action='publish_course'`).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("expected 1 persisted rule, got %d (%v)", count, err)
+	}
+
+	// Corrupted unsupported condition in database fails closed with ErrUnavailable.
+	if _, err := owner.Exec(`INSERT INTO platform.eligibility_rules(school,action,conditions) VALUES('buaa','content.enter','["course_enrollment"]')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Get(ctx, "buaa", "content.enter"); !errors.Is(err, e.ErrUnavailable) {
+		t.Fatalf("expected ErrUnavailable for corrupted DB condition, got %v", err)
+	}
+}

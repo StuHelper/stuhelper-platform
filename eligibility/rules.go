@@ -2,7 +2,13 @@
 // It has no identity, verification, catalog or network dependency.
 package eligibility
 
-import "errors"
+import (
+	"errors"
+	"slices"
+	"strings"
+	"unicode"
+	"unicode/utf8"
+)
 
 type Condition string
 
@@ -23,8 +29,9 @@ const (
 )
 
 type Rule struct {
-	Version    string      `json:"version"`
-	Conditions []Condition `json:"conditions"`
+	Version             string      `json:"version"`
+	Conditions          []Condition `json:"conditions"`
+	SupportedConditions []Condition `json:"supported_conditions,omitempty"`
 }
 type Result struct {
 	Allowed     bool
@@ -35,8 +42,12 @@ type Result struct {
 
 var ErrRule = errors.New("invalid_eligibility_rule")
 
+func validToken(s string, maxLen int) bool {
+	return s != "" && len(s) <= maxLen && utf8.ValidString(s) && !strings.ContainsFunc(s, unicode.IsControl) && !strings.ContainsFunc(s, unicode.IsSpace)
+}
+
 func Validate(rule Rule) error {
-	if rule.Version == "" || len(rule.Version) > 128 || len(rule.Conditions) > 5 {
+	if !validToken(rule.Version, 128) || len(rule.Conditions) > 5 {
 		return ErrRule
 	}
 	seen := map[Condition]bool{}
@@ -53,6 +64,25 @@ func Validate(rule Rule) error {
 	}
 	return nil
 }
+
+// ValidateAction verifies both structural rule invariants and that every
+// configured condition is supported by the target action's fact providers.
+func ValidateAction(action string, rule Rule) error {
+	if err := Validate(rule); err != nil {
+		return err
+	}
+	supported, err := SupportedConditions(action)
+	if err != nil {
+		return err
+	}
+	for _, c := range rule.Conditions {
+		if !slices.Contains(supported, c) {
+			return ErrRule
+		}
+	}
+	return nil
+}
+
 func Evaluate(rule Rule, facts map[Condition]Fact) (Result, error) {
 	result := Result{Allowed: true, Version: rule.Version, Missing: []Condition{}, Unavailable: []Condition{}}
 	if err := Validate(rule); err != nil {
