@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/StuHelper/stuhelper-platform/account"
 	ah "github.com/StuHelper/stuhelper-platform/admin/httpapi"
+	p "github.com/StuHelper/stuhelper-platform/postgres"
 	sdk "github.com/StuHelper/stuhelper-platform/sdk/admin"
 	"net/http"
 	"net/http/httptest"
@@ -579,5 +580,32 @@ func TestPlatformAuditSnapshotActorBucketIsolation(t *testing.T) {
 	second, err := s.Operations(ctx, boss, a.Filter{Scope: a.Global, Action: "iso", Limit: 1, Cursor: first.NextCursor})
 	if err != nil || second.Partial || len(second.Items) != 1 {
 		t.Fatalf("boss snapshot was evicted by another operator's flood: page=%+v err=%v", second, err)
+	}
+}
+
+func TestPlatformAuditCursorSurvivesAnotherRepository(t *testing.T) {
+	firstService, repo := service(t)
+	secondService := a.Service{Repo: &p.Repository{DB: repo.DB}, Identity: firstService.Identity}
+	now := time.Now().UTC()
+	for i := range 3 {
+		if _, err := repo.DB.Exec(`INSERT INTO platform.audit(actor,action,target,data,created_at,school,module) VALUES('synthetic','multi',$1,'{}',$2,'school-a','resources')`, fmt.Sprint(i), now.Add(-time.Duration(i+1)*time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	filter := a.Filter{Scope: a.Global, Action: "multi", Limit: 1}
+	var cursors []string
+	for _, service := range []*a.Service{&firstService, &secondService} {
+		page, err := service.Operations(ctx, boss, filter)
+		if err != nil || page.Partial || page.NextCursor == "" {
+			t.Fatalf("first page: %+v %v", page, err)
+		}
+		cursors = append(cursors, page.NextCursor)
+	}
+	for _, cursor := range cursors {
+		filter.Cursor = cursor
+		page, err := secondService.Operations(ctx, boss, filter)
+		if err != nil || page.Partial || len(page.Items) != 1 || page.Items[0].Target != "1" {
+			t.Fatalf("continuation: %+v %v", page, err)
+		}
 	}
 }

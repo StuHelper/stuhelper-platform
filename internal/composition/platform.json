@@ -42,6 +42,7 @@
         "postgres/audit_test.go#TestPlatformOperationsFutureFromAndDisjointModuleSources",
         "postgres/audit_test.go#TestPlatformAuditCursorVariantsAndIndexOrder",
         "postgres/audit_test.go#TestPlatformAuditSnapshotActorBucketIsolation",
+        "postgres/audit_test.go#TestPlatformAuditCursorSurvivesAnotherRepository",
         "postgres/audit_test.go#TestPlatformAuditManyPendingTransactions",
         "postgres/audit_test.go#TestAuditProvidersStableMergeAndSnapshot",
         "postgres/audit_test.go#TestAuditProvidersAuthorizationBeforeReadAndRevokedPage",
