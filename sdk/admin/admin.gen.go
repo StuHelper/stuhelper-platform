@@ -32,6 +32,33 @@ func (e AdminAuditPageSource) Valid() bool {
 	}
 }
 
+// Defines values for AdminBatchGrantChangeResultItemStatus.
+const (
+	AdminBatchGrantChangeResultItemStatusConflict  AdminBatchGrantChangeResultItemStatus = "conflict"
+	AdminBatchGrantChangeResultItemStatusForbidden AdminBatchGrantChangeResultItemStatus = "forbidden"
+	AdminBatchGrantChangeResultItemStatusNotFound  AdminBatchGrantChangeResultItemStatus = "not_found"
+	AdminBatchGrantChangeResultItemStatusReady     AdminBatchGrantChangeResultItemStatus = "ready"
+	AdminBatchGrantChangeResultItemStatusSucceeded AdminBatchGrantChangeResultItemStatus = "succeeded"
+)
+
+// Valid indicates whether the value is a known member of the AdminBatchGrantChangeResultItemStatus enum.
+func (e AdminBatchGrantChangeResultItemStatus) Valid() bool {
+	switch e {
+	case AdminBatchGrantChangeResultItemStatusConflict:
+		return true
+	case AdminBatchGrantChangeResultItemStatusForbidden:
+		return true
+	case AdminBatchGrantChangeResultItemStatusNotFound:
+		return true
+	case AdminBatchGrantChangeResultItemStatusReady:
+		return true
+	case AdminBatchGrantChangeResultItemStatusSucceeded:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for AdminEffectiveAuthorizationMode.
 const (
 	ExplicitGrants   AdminEffectiveAuthorizationMode = "explicit_grants"
@@ -52,32 +79,46 @@ func (e AdminEffectiveAuthorizationMode) Valid() bool {
 
 // Defines values for AdminErrorCode.
 const (
-	Conflict        AdminErrorCode = "conflict"
-	Forbidden       AdminErrorCode = "forbidden"
-	InvalidRequest  AdminErrorCode = "invalid_request"
-	NotFound        AdminErrorCode = "not_found"
-	Unauthenticated AdminErrorCode = "unauthenticated"
-	Unavailable     AdminErrorCode = "unavailable"
+	AdminErrorCodeConflict        AdminErrorCode = "conflict"
+	AdminErrorCodeForbidden       AdminErrorCode = "forbidden"
+	AdminErrorCodeInvalidRequest  AdminErrorCode = "invalid_request"
+	AdminErrorCodeNotFound        AdminErrorCode = "not_found"
+	AdminErrorCodeUnauthenticated AdminErrorCode = "unauthenticated"
+	AdminErrorCodeUnavailable     AdminErrorCode = "unavailable"
 )
 
 // Valid indicates whether the value is a known member of the AdminErrorCode enum.
 func (e AdminErrorCode) Valid() bool {
 	switch e {
-	case Conflict:
+	case AdminErrorCodeConflict:
 		return true
-	case Forbidden:
+	case AdminErrorCodeForbidden:
 		return true
-	case InvalidRequest:
+	case AdminErrorCodeInvalidRequest:
 		return true
-	case NotFound:
+	case AdminErrorCodeNotFound:
 		return true
-	case Unauthenticated:
+	case AdminErrorCodeUnauthenticated:
 		return true
-	case Unavailable:
+	case AdminErrorCodeUnavailable:
 		return true
 	default:
 		return false
 	}
+}
+
+// AdminAdministratorPage defines model for AdminAdministratorPage.
+type AdminAdministratorPage struct {
+	Items      []AdminAdministratorSummary `json:"items"`
+	NextCursor string                      `json:"next_cursor"`
+}
+
+// AdminAdministratorSummary defines model for AdminAdministratorSummary.
+type AdminAdministratorSummary struct {
+	// Grants 符合筛选条件且收窄至调用方可见范围的显式授权。
+	Grants   []AdminGrant `json:"grants"`
+	Revision string       `json:"revision"`
+	Subject  string       `json:"subject"`
 }
 
 // AdminAudit defines model for AdminAudit.
@@ -124,6 +165,46 @@ type AdminAuditPage struct {
 // AdminAuditPageSource 汇总查询由 platform 提供，单条记录 source 标识原始模块。
 type AdminAuditPageSource string
 
+// AdminBatchGrantChangeItem defines model for AdminBatchGrantChangeItem.
+type AdminBatchGrantChangeItem struct {
+	Add              []AdminGrantTarget `json:"add"`
+	ExpectedRevision string             `json:"expected_revision"`
+	Revoke           []AdminGrantTarget `json:"revoke"`
+
+	// Subject account.Principal.Key() 编码的 issuer 与 subject。
+	Subject string `json:"subject"`
+}
+
+// AdminBatchGrantChangeResultItem defines model for AdminBatchGrantChangeResultItem.
+type AdminBatchGrantChangeResultItem struct {
+	Adding []AdminGrant `json:"adding"`
+
+	// CurrentRevision 变更前观测到的当前修订号；无权限时为空字符串。
+	CurrentRevision *string `json:"current_revision,omitempty"`
+
+	// Revision 执行成功或预览就绪时为新修订号；冲突时为当前实际修订号；无权限或角色不存在时为空字符串。
+	Revision string                                `json:"revision"`
+	Revoking []AdminGrant                          `json:"revoking"`
+	Status   AdminBatchGrantChangeResultItemStatus `json:"status"`
+	Subject  string                                `json:"subject"`
+}
+
+// AdminBatchGrantChangeResultItemStatus defines model for AdminBatchGrantChangeResultItem.Status.
+type AdminBatchGrantChangeResultItemStatus string
+
+// AdminBatchGrantChangesInput defines model for AdminBatchGrantChangesInput.
+type AdminBatchGrantChangesInput struct {
+	DryRun bool                        `json:"dry_run"`
+	Items  []AdminBatchGrantChangeItem `json:"items"`
+	Reason string                      `json:"reason"`
+}
+
+// AdminBatchGrantChangesResult defines model for AdminBatchGrantChangesResult.
+type AdminBatchGrantChangesResult struct {
+	DryRun bool                              `json:"dry_run"`
+	Items  []AdminBatchGrantChangeResultItem `json:"items"`
+}
+
 // AdminEffective defines model for AdminEffective.
 type AdminEffective struct {
 	// AuthorizationMode platform_admin_all 表示被查询者是可信平台管理员，自动拥有任意能力及任意范围（含敏感能力）；explicit_grants 表示按 grants 显式授权。不得用 grants 是否为空判断平台管理员权限。
@@ -152,6 +233,20 @@ type AdminGrant struct {
 	Scope AdminScope `json:"scope"`
 }
 
+// AdminGrantChangesInput defines model for AdminGrantChangesInput.
+type AdminGrantChangesInput struct {
+	Add              []AdminGrantTarget `json:"add"`
+	ExpectedRevision string             `json:"expected_revision"`
+	Reason           string             `json:"reason"`
+	Revoke           []AdminGrantTarget `json:"revoke"`
+}
+
+// AdminGrantTarget defines model for AdminGrantTarget.
+type AdminGrantTarget struct {
+	RoleId string     `json:"role_id"`
+	Scope  AdminScope `json:"scope"`
+}
+
 // AdminMutation defines model for AdminMutation.
 type AdminMutation struct {
 	ExpectedRevision string     `json:"expected_revision"`
@@ -168,14 +263,23 @@ type AdminRevision struct {
 // AdminRole defines model for AdminRole.
 type AdminRole struct {
 	Capabilities []string `json:"capabilities"`
-	Id           string   `json:"id"`
-	Name         string   `json:"name"`
+
+	// CreatedAt 角色创建时间；内置建议模板省略该字段。
+	CreatedAt *time.Time `json:"created_at,omitempty"`
+	Id        string     `json:"id"`
+	Name      string     `json:"name"`
 }
 
 // AdminRoleInput defines model for AdminRoleInput.
 type AdminRoleInput struct {
 	Reason string    `json:"reason"`
 	Role   AdminRole `json:"role"`
+}
+
+// AdminRolePage defines model for AdminRolePage.
+type AdminRolePage struct {
+	Items      []AdminRole `json:"items"`
+	NextCursor string      `json:"next_cursor"`
 }
 
 // AdminScope defines model for AdminScope.
@@ -190,11 +294,27 @@ type AdminScope struct {
 	School string `json:"school"`
 }
 
+// ListAdministratorsParams defines parameters for ListAdministrators.
+type ListAdministratorsParams struct {
+	School     *string `form:"school,omitempty" json:"school,omitempty"`
+	Group      *string `form:"group,omitempty" json:"group,omitempty"`
+	Module     *string `form:"module,omitempty" json:"module,omitempty"`
+	RoleId     *string `form:"role_id,omitempty" json:"role_id,omitempty"`
+	Capability *string `form:"capability,omitempty" json:"capability,omitempty"`
+	Cursor     *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit      *int    `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
 // GetAdminEffectiveParams defines parameters for GetAdminEffective.
 type GetAdminEffectiveParams struct {
 	School *string `form:"school,omitempty" json:"school,omitempty"`
 	Group  *string `form:"group,omitempty" json:"group,omitempty"`
 	Module *string `form:"module,omitempty" json:"module,omitempty"`
+}
+
+// ChangeAdminGrantsParams defines parameters for ChangeAdminGrants.
+type ChangeAdminGrantsParams struct {
+	IdempotencyKey string `json:"Idempotency-Key"`
 }
 
 // RevokeAdminRoleParams defines parameters for RevokeAdminRole.
@@ -205,6 +325,12 @@ type RevokeAdminRoleParams struct {
 // GrantAdminRoleParams defines parameters for GrantAdminRole.
 type GrantAdminRoleParams struct {
 	IdempotencyKey string `json:"Idempotency-Key"`
+}
+
+// BatchChangeAdminGrantsParams defines parameters for BatchChangeAdminGrants.
+type BatchChangeAdminGrantsParams struct {
+	// IdempotencyKey dry_run=false 时必填；相同幂等键重试返回原批量结果。
+	IdempotencyKey *string `json:"Idempotency-Key,omitempty"`
 }
 
 // ListPlatformOperationsParams defines parameters for ListPlatformOperations.
@@ -224,16 +350,30 @@ type ListPlatformOperationsParams struct {
 	Sources *[]string `form:"sources,omitempty" json:"sources,omitempty"`
 }
 
+// ListAdminRolesParams defines parameters for ListAdminRoles.
+type ListAdminRolesParams struct {
+	Keyword    *string `form:"keyword,omitempty" json:"keyword,omitempty"`
+	Capability *string `form:"capability,omitempty" json:"capability,omitempty"`
+	Cursor     *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit      *int    `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
 // CreateAdminRoleParams defines parameters for CreateAdminRole.
 type CreateAdminRoleParams struct {
 	IdempotencyKey string `json:"Idempotency-Key"`
 }
+
+// ChangeAdminGrantsJSONRequestBody defines body for ChangeAdminGrants for application/json ContentType.
+type ChangeAdminGrantsJSONRequestBody = AdminGrantChangesInput
 
 // RevokeAdminRoleJSONRequestBody defines body for RevokeAdminRole for application/json ContentType.
 type RevokeAdminRoleJSONRequestBody = AdminMutation
 
 // GrantAdminRoleJSONRequestBody defines body for GrantAdminRole for application/json ContentType.
 type GrantAdminRoleJSONRequestBody = AdminMutation
+
+// BatchChangeAdminGrantsJSONRequestBody defines body for BatchChangeAdminGrants for application/json ContentType.
+type BatchChangeAdminGrantsJSONRequestBody = AdminBatchGrantChangesInput
 
 // CreateAdminRoleJSONRequestBody defines body for CreateAdminRole for application/json ContentType.
 type CreateAdminRoleJSONRequestBody = AdminRoleInput
@@ -312,10 +452,27 @@ func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
 // The interface specification for the client above.
 type ClientInterface interface {
 
+	// ListAdministrators performs a GET /api/v1/platform/admin/administrators (the `ListAdministrators` operationId) request.
+	//
+	// 按学校、群、业务模块、角色或能力反查当前持有显式授权的管理员列表。请求范围先与调用方的 platform.authorization.read 有效范围求交集，无交集返回 403；返回的授权范围均收窄至调用方可见范围。单页最多返回 1,000 项收窄后的授权。超过上限返回 400 invalid_request，调用方可缩小查询范围或降低每页人数。游标绑定操作者、筛选条件与授权范围。
+	ListAdministrators(ctx context.Context, params *ListAdministratorsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetAdminEffective performs a GET /api/v1/platform/admin/administrators/{subject}/effective (the `GetAdminEffective` operationId) request.
 	//
 	// 先检查查询者权限，再从可信身份接口读取被查询者的当前平台管理员身份。平台管理员返回 authorization_mode=platform_admin_all，表示全部能力及全部范围（含敏感能力）；其他管理员返回 explicit_grants 及查询范围内显式授权。查询他人需要该范围的 platform.authorization.read。修订号仅表示显式授权集合，不代表身份修订，客户端不能据此缓存平台管理员身份。
 	GetAdminEffective(ctx context.Context, subject string, params *GetAdminEffectiveParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ChangeAdminGrantsWithBody performs a POST /api/v1/platform/admin/administrators/{subject}/grant-changes (the `ChangeAdminGrants` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// 在单一预期修订号与事务内原子执行同一管理员的多项角色授予与撤销，仅递增一次修订号，实现新旧角色无空窗切换。禁止给自己增加授权；委托权限规则与单次授予一致。.
+	ChangeAdminGrantsWithBody(ctx context.Context, subject string, params *ChangeAdminGrantsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ChangeAdminGrants performs a POST /api/v1/platform/admin/administrators/{subject}/grant-changes (the `ChangeAdminGrants` operationId) request.
+	// Takes a body of the `application/json` content type.
+	//
+	// 在单一预期修订号与事务内原子执行同一管理员的多项角色授予与撤销，仅递增一次修订号，实现新旧角色无空窗切换。禁止给自己增加授权；委托权限规则与单次授予一致。.
+	ChangeAdminGrants(ctx context.Context, subject string, params *ChangeAdminGrantsParams, body ChangeAdminGrantsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// RevokeAdminRoleWithBody performs a DELETE /api/v1/platform/admin/administrators/{subject}/grants (the `RevokeAdminRole` operationId) request,
 	// with any type of body and a specified content type.
@@ -341,6 +498,18 @@ type ClientInterface interface {
 	// 可信平台管理员可授予任意能力及任意范围，包含敏感能力；普通管理员只能委托自己持有的能力与范围，不能授予 platform.* 能力。禁止任何人给自己增加授权。授权修订号冲突返回 409。每个管理员最多 1000 条有效授权。重复请求重新授权后返回原结果。
 	GrantAdminRole(ctx context.Context, subject string, params *GrantAdminRoleParams, body GrantAdminRoleJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// BatchChangeAdminGrantsWithBody performs a POST /api/v1/platform/admin/batch-grant-changes (the `BatchChangeAdminGrants` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// 多管理员授权变更预览（dry_run=true）与逐项执行（dry_run=false）。单批最多 50 名管理员且批内 subject 不重复。dry_run=false 时必须提供 Idempotency-Key，逐项返回 succeeded、conflict、forbidden 或 not_found 状态及最新修订号。.
+	BatchChangeAdminGrantsWithBody(ctx context.Context, params *BatchChangeAdminGrantsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// BatchChangeAdminGrants performs a POST /api/v1/platform/admin/batch-grant-changes (the `BatchChangeAdminGrants` operationId) request.
+	// Takes a body of the `application/json` content type.
+	//
+	// 多管理员授权变更预览（dry_run=true）与逐项执行（dry_run=false）。单批最多 50 名管理员且批内 subject 不重复。dry_run=false 时必须提供 Idempotency-Key，逐项返回 succeeded、conflict、forbidden 或 not_found 状态及最新修订号。.
+	BatchChangeAdminGrants(ctx context.Context, params *BatchChangeAdminGrantsParams, body BatchChangeAdminGrantsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListPlatformOperations performs a GET /api/v1/platform/admin/operations (the `ListPlatformOperations` operationId) request.
 	//
 	// 按当前有效授权范围向已装配提供方读取并合并审计，时间、来源模块、记录 ID 均按降序排序。每页重新授权；游标绑定操作者、筛选条件、权限范围和提供方集合，并保留各提供方的快照。提供方失败返回部分结果及 missing_modules；缺失在同一分页过程中持续标记，恢复后须重新查询。默认查询全部已装配且获准的来源。旧版本游标不接受。.
@@ -350,6 +519,11 @@ type ClientInterface interface {
 	//
 	// 六种初始模板仅提供建议能力；不自动授权，不包含敏感能力。.
 	ListAdminRoleTemplates(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListAdminRoles performs a GET /api/v1/platform/admin/roles (the `ListAdminRoles` operationId) request.
+	//
+	// 分页读取不可变角色定义。需要全局或任意范围的 platform.authorization.read 能力；可信平台管理员自动满足。按创建时间与角色 ID 降序排列，游标绑定操作者与筛选条件。
+	ListAdminRoles(ctx context.Context, params *ListAdminRolesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// CreateAdminRoleWithBody performs a POST /api/v1/platform/admin/roles (the `CreateAdminRole` operationId) request,
 	// with any type of body and a specified content type.
@@ -369,11 +543,58 @@ type ClientInterface interface {
 	GetAdminRole(ctx context.Context, role string, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
+// ListAdministrators performs a GET /api/v1/platform/admin/administrators (the `ListAdministrators` operationId) request.
+//
+// 按学校、群、业务模块、角色或能力反查当前持有显式授权的管理员列表。请求范围先与调用方的 platform.authorization.read 有效范围求交集，无交集返回 403；返回的授权范围均收窄至调用方可见范围。单页最多返回 1,000 项收窄后的授权。超过上限返回 400 invalid_request，调用方可缩小查询范围或降低每页人数。游标绑定操作者、筛选条件与授权范围。
+func (c *Client) ListAdministrators(ctx context.Context, params *ListAdministratorsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListAdministratorsRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // GetAdminEffective performs a GET /api/v1/platform/admin/administrators/{subject}/effective (the `GetAdminEffective` operationId) request.
 //
 // 先检查查询者权限，再从可信身份接口读取被查询者的当前平台管理员身份。平台管理员返回 authorization_mode=platform_admin_all，表示全部能力及全部范围（含敏感能力）；其他管理员返回 explicit_grants 及查询范围内显式授权。查询他人需要该范围的 platform.authorization.read。修订号仅表示显式授权集合，不代表身份修订，客户端不能据此缓存平台管理员身份。
 func (c *Client) GetAdminEffective(ctx context.Context, subject string, params *GetAdminEffectiveParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetAdminEffectiveRequest(c.Server, subject, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ChangeAdminGrantsWithBody performs a POST /api/v1/platform/admin/administrators/{subject}/grant-changes (the `ChangeAdminGrants` operationId) request,
+// with any type of body and a specified content type.
+//
+// 在单一预期修订号与事务内原子执行同一管理员的多项角色授予与撤销，仅递增一次修订号，实现新旧角色无空窗切换。禁止给自己增加授权；委托权限规则与单次授予一致。.
+func (c *Client) ChangeAdminGrantsWithBody(ctx context.Context, subject string, params *ChangeAdminGrantsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewChangeAdminGrantsRequestWithBody(c.Server, subject, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ChangeAdminGrants performs a POST /api/v1/platform/admin/administrators/{subject}/grant-changes (the `ChangeAdminGrants` operationId) request.
+// Takes a body of the `application/json` content type.
+//
+// 在单一预期修订号与事务内原子执行同一管理员的多项角色授予与撤销，仅递增一次修订号，实现新旧角色无空窗切换。禁止给自己增加授权；委托权限规则与单次授予一致。.
+func (c *Client) ChangeAdminGrants(ctx context.Context, subject string, params *ChangeAdminGrantsParams, body ChangeAdminGrantsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewChangeAdminGrantsRequest(c.Server, subject, params, body)
 	if err != nil {
 		return nil, err
 	}
@@ -448,6 +669,38 @@ func (c *Client) GrantAdminRole(ctx context.Context, subject string, params *Gra
 	return c.Client.Do(req)
 }
 
+// BatchChangeAdminGrantsWithBody performs a POST /api/v1/platform/admin/batch-grant-changes (the `BatchChangeAdminGrants` operationId) request,
+// with any type of body and a specified content type.
+//
+// 多管理员授权变更预览（dry_run=true）与逐项执行（dry_run=false）。单批最多 50 名管理员且批内 subject 不重复。dry_run=false 时必须提供 Idempotency-Key，逐项返回 succeeded、conflict、forbidden 或 not_found 状态及最新修订号。.
+func (c *Client) BatchChangeAdminGrantsWithBody(ctx context.Context, params *BatchChangeAdminGrantsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewBatchChangeAdminGrantsRequestWithBody(c.Server, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// BatchChangeAdminGrants performs a POST /api/v1/platform/admin/batch-grant-changes (the `BatchChangeAdminGrants` operationId) request.
+// Takes a body of the `application/json` content type.
+//
+// 多管理员授权变更预览（dry_run=true）与逐项执行（dry_run=false）。单批最多 50 名管理员且批内 subject 不重复。dry_run=false 时必须提供 Idempotency-Key，逐项返回 succeeded、conflict、forbidden 或 not_found 状态及最新修订号。.
+func (c *Client) BatchChangeAdminGrants(ctx context.Context, params *BatchChangeAdminGrantsParams, body BatchChangeAdminGrantsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewBatchChangeAdminGrantsRequest(c.Server, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // ListPlatformOperations performs a GET /api/v1/platform/admin/operations (the `ListPlatformOperations` operationId) request.
 //
 // 按当前有效授权范围向已装配提供方读取并合并审计，时间、来源模块、记录 ID 均按降序排序。每页重新授权；游标绑定操作者、筛选条件、权限范围和提供方集合，并保留各提供方的快照。提供方失败返回部分结果及 missing_modules；缺失在同一分页过程中持续标记，恢复后须重新查询。默认查询全部已装配且获准的来源。旧版本游标不接受。.
@@ -468,6 +721,21 @@ func (c *Client) ListPlatformOperations(ctx context.Context, params *ListPlatfor
 // 六种初始模板仅提供建议能力；不自动授权，不包含敏感能力。.
 func (c *Client) ListAdminRoleTemplates(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListAdminRoleTemplatesRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListAdminRoles performs a GET /api/v1/platform/admin/roles (the `ListAdminRoles` operationId) request.
+//
+// 分页读取不可变角色定义。需要全局或任意范围的 platform.authorization.read 能力；可信平台管理员自动满足。按创建时间与角色 ID 降序排列，游标绑定操作者与筛选条件。
+func (c *Client) ListAdminRoles(ctx context.Context, params *ListAdminRolesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListAdminRolesRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -523,6 +791,132 @@ func (c *Client) GetAdminRole(ctx context.Context, role string, reqEditors ...Re
 		return nil, err
 	}
 	return c.Client.Do(req)
+}
+
+// NewListAdministratorsRequest constructs an http.Request for the ListAdministrators method
+func NewListAdministratorsRequest(server string, params *ListAdministratorsParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/platform/admin/administrators")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.School != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "school", *params.School, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Group != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "group", *params.Group, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Module != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "module", *params.Module, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.RoleId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "role_id", *params.RoleId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Capability != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "capability", *params.Capability, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
 }
 
 // NewGetAdminEffectiveRequest constructs an http.Request for the GetAdminEffective method
@@ -605,6 +999,66 @@ func NewGetAdminEffectiveRequest(server string, subject string, params *GetAdmin
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
 	if err != nil {
 		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewChangeAdminGrantsRequest calls the generic ChangeAdminGrants builder with application/json body
+func NewChangeAdminGrantsRequest(server string, subject string, params *ChangeAdminGrantsParams, body ChangeAdminGrantsJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewChangeAdminGrantsRequestWithBody(server, subject, params, "application/json", bodyReader)
+}
+
+// NewChangeAdminGrantsRequestWithBody constructs an http.Request for the ChangeAdminGrants method, with any body, and a specified content type
+func NewChangeAdminGrantsRequestWithBody(server string, subject string, params *ChangeAdminGrantsParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "subject", subject, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/platform/admin/administrators/%s/grant-changes", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("Idempotency-Key", headerParam0)
+
 	}
 
 	return req, nil
@@ -724,6 +1178,61 @@ func NewGrantAdminRoleRequestWithBody(server string, subject string, params *Gra
 		}
 
 		req.Header.Set("Idempotency-Key", headerParam0)
+
+	}
+
+	return req, nil
+}
+
+// NewBatchChangeAdminGrantsRequest calls the generic BatchChangeAdminGrants builder with application/json body
+func NewBatchChangeAdminGrantsRequest(server string, params *BatchChangeAdminGrantsParams, body BatchChangeAdminGrantsJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewBatchChangeAdminGrantsRequestWithBody(server, params, "application/json", bodyReader)
+}
+
+// NewBatchChangeAdminGrantsRequestWithBody constructs an http.Request for the BatchChangeAdminGrants method, with any body, and a specified content type
+func NewBatchChangeAdminGrantsRequestWithBody(server string, params *BatchChangeAdminGrantsParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/platform/admin/batch-grant-changes")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		if params.IdempotencyKey != nil {
+			var headerParam0 string
+
+			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", *params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("Idempotency-Key", headerParam0)
+		}
 
 	}
 
@@ -931,6 +1440,96 @@ func NewListAdminRoleTemplatesRequest(server string) (*http.Request, error) {
 	return req, nil
 }
 
+// NewListAdminRolesRequest constructs an http.Request for the ListAdminRoles method
+func NewListAdminRolesRequest(server string, params *ListAdminRolesParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/platform/admin/roles")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Keyword != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "keyword", *params.Keyword, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Capability != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "capability", *params.Capability, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewCreateAdminRoleRequest calls the generic CreateAdminRole builder with application/json body
 func NewCreateAdminRoleRequest(server string, params *CreateAdminRoleParams, body CreateAdminRoleJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -1062,12 +1661,33 @@ func WithBaseURL(baseURL string) ClientOption {
 // ClientWithResponsesInterface is the interface specification for the client with responses above.
 type ClientWithResponsesInterface interface {
 
+	// ListAdministratorsWithResponse performs a GET /api/v1/platform/admin/administrators (the `ListAdministrators` operationId) request.
+	//
+	// 按学校、群、业务模块、角色或能力反查当前持有显式授权的管理员列表。请求范围先与调用方的 platform.authorization.read 有效范围求交集，无交集返回 403；返回的授权范围均收窄至调用方可见范围。单页最多返回 1,000 项收窄后的授权。超过上限返回 400 invalid_request，调用方可缩小查询范围或降低每页人数。游标绑定操作者、筛选条件与授权范围。
+	//
+	// Returns a wrapper object for the known response body format(s).
+	ListAdministratorsWithResponse(ctx context.Context, params *ListAdministratorsParams, reqEditors ...RequestEditorFn) (*ListAdministratorsResponse, error)
+
 	// GetAdminEffectiveWithResponse performs a GET /api/v1/platform/admin/administrators/{subject}/effective (the `GetAdminEffective` operationId) request.
 	//
 	// 先检查查询者权限，再从可信身份接口读取被查询者的当前平台管理员身份。平台管理员返回 authorization_mode=platform_admin_all，表示全部能力及全部范围（含敏感能力）；其他管理员返回 explicit_grants 及查询范围内显式授权。查询他人需要该范围的 platform.authorization.read。修订号仅表示显式授权集合，不代表身份修订，客户端不能据此缓存平台管理员身份。
 	//
 	// Returns a wrapper object for the known response body format(s).
 	GetAdminEffectiveWithResponse(ctx context.Context, subject string, params *GetAdminEffectiveParams, reqEditors ...RequestEditorFn) (*GetAdminEffectiveResponse, error)
+
+	// ChangeAdminGrantsWithBodyWithResponse performs a POST /api/v1/platform/admin/administrators/{subject}/grant-changes (the `ChangeAdminGrants` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// 在单一预期修订号与事务内原子执行同一管理员的多项角色授予与撤销，仅递增一次修订号，实现新旧角色无空窗切换。禁止给自己增加授权；委托权限规则与单次授予一致。.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	ChangeAdminGrantsWithBodyWithResponse(ctx context.Context, subject string, params *ChangeAdminGrantsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ChangeAdminGrantsResponse, error)
+
+	// ChangeAdminGrantsWithResponse performs a POST /api/v1/platform/admin/administrators/{subject}/grant-changes (the `ChangeAdminGrants` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// 在单一预期修订号与事务内原子执行同一管理员的多项角色授予与撤销，仅递增一次修订号，实现新旧角色无空窗切换。禁止给自己增加授权；委托权限规则与单次授予一致。.
+	ChangeAdminGrantsWithResponse(ctx context.Context, subject string, params *ChangeAdminGrantsParams, body ChangeAdminGrantsJSONRequestBody, reqEditors ...RequestEditorFn) (*ChangeAdminGrantsResponse, error)
 
 	// RevokeAdminRoleWithBodyWithResponse performs a DELETE /api/v1/platform/admin/administrators/{subject}/grants (the `RevokeAdminRole` operationId) request,
 	// with any type of body and a specified content type.
@@ -1097,6 +1717,20 @@ type ClientWithResponsesInterface interface {
 	// 可信平台管理员可授予任意能力及任意范围，包含敏感能力；普通管理员只能委托自己持有的能力与范围，不能授予 platform.* 能力。禁止任何人给自己增加授权。授权修订号冲突返回 409。每个管理员最多 1000 条有效授权。重复请求重新授权后返回原结果。
 	GrantAdminRoleWithResponse(ctx context.Context, subject string, params *GrantAdminRoleParams, body GrantAdminRoleJSONRequestBody, reqEditors ...RequestEditorFn) (*GrantAdminRoleResponse, error)
 
+	// BatchChangeAdminGrantsWithBodyWithResponse performs a POST /api/v1/platform/admin/batch-grant-changes (the `BatchChangeAdminGrants` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// 多管理员授权变更预览（dry_run=true）与逐项执行（dry_run=false）。单批最多 50 名管理员且批内 subject 不重复。dry_run=false 时必须提供 Idempotency-Key，逐项返回 succeeded、conflict、forbidden 或 not_found 状态及最新修订号。.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	BatchChangeAdminGrantsWithBodyWithResponse(ctx context.Context, params *BatchChangeAdminGrantsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*BatchChangeAdminGrantsResponse, error)
+
+	// BatchChangeAdminGrantsWithResponse performs a POST /api/v1/platform/admin/batch-grant-changes (the `BatchChangeAdminGrants` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// 多管理员授权变更预览（dry_run=true）与逐项执行（dry_run=false）。单批最多 50 名管理员且批内 subject 不重复。dry_run=false 时必须提供 Idempotency-Key，逐项返回 succeeded、conflict、forbidden 或 not_found 状态及最新修订号。.
+	BatchChangeAdminGrantsWithResponse(ctx context.Context, params *BatchChangeAdminGrantsParams, body BatchChangeAdminGrantsJSONRequestBody, reqEditors ...RequestEditorFn) (*BatchChangeAdminGrantsResponse, error)
+
 	// ListPlatformOperationsWithResponse performs a GET /api/v1/platform/admin/operations (the `ListPlatformOperations` operationId) request.
 	//
 	// 按当前有效授权范围向已装配提供方读取并合并审计，时间、来源模块、记录 ID 均按降序排序。每页重新授权；游标绑定操作者、筛选条件、权限范围和提供方集合，并保留各提供方的快照。提供方失败返回部分结果及 missing_modules；缺失在同一分页过程中持续标记，恢复后须重新查询。默认查询全部已装配且获准的来源。旧版本游标不接受。.
@@ -1110,6 +1744,13 @@ type ClientWithResponsesInterface interface {
 	//
 	// Returns a wrapper object for the known response body format(s).
 	ListAdminRoleTemplatesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListAdminRoleTemplatesResponse, error)
+
+	// ListAdminRolesWithResponse performs a GET /api/v1/platform/admin/roles (the `ListAdminRoles` operationId) request.
+	//
+	// 分页读取不可变角色定义。需要全局或任意范围的 platform.authorization.read 能力；可信平台管理员自动满足。按创建时间与角色 ID 降序排列，游标绑定操作者与筛选条件。
+	//
+	// Returns a wrapper object for the known response body format(s).
+	ListAdminRolesWithResponse(ctx context.Context, params *ListAdminRolesParams, reqEditors ...RequestEditorFn) (*ListAdminRolesResponse, error)
 
 	// CreateAdminRoleWithBodyWithResponse performs a POST /api/v1/platform/admin/roles (the `CreateAdminRole` operationId) request,
 	// with any type of body and a specified content type.
@@ -1131,6 +1772,75 @@ type ClientWithResponsesInterface interface {
 	//
 	// Returns a wrapper object for the known response body format(s).
 	GetAdminRoleWithResponse(ctx context.Context, role string, reqEditors ...RequestEditorFn) (*GetAdminRoleResponse, error)
+}
+
+type ListAdministratorsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *AdminAdministratorPage
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *AdminError
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *AdminError
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *AdminError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *AdminError
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListAdministratorsResponse) GetJSON200() *AdminAdministratorPage {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r ListAdministratorsResponse) GetJSON400() *AdminError {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ListAdministratorsResponse) GetJSON401() *AdminError {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ListAdministratorsResponse) GetJSON403() *AdminError {
+	return r.JSON403
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r ListAdministratorsResponse) GetJSON503() *AdminError {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r ListAdministratorsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListAdministratorsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListAdministratorsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListAdministratorsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
 }
 
 type GetAdminEffectiveResponse struct {
@@ -1210,6 +1920,89 @@ func (r GetAdminEffectiveResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r GetAdminEffectiveResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ChangeAdminGrantsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *AdminRevision
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *AdminError
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *AdminError
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *AdminError
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *AdminError
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *AdminError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *AdminError
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ChangeAdminGrantsResponse) GetJSON200() *AdminRevision {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r ChangeAdminGrantsResponse) GetJSON400() *AdminError {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ChangeAdminGrantsResponse) GetJSON401() *AdminError {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ChangeAdminGrantsResponse) GetJSON403() *AdminError {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r ChangeAdminGrantsResponse) GetJSON404() *AdminError {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r ChangeAdminGrantsResponse) GetJSON409() *AdminError {
+	return r.JSON409
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r ChangeAdminGrantsResponse) GetJSON503() *AdminError {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r ChangeAdminGrantsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ChangeAdminGrantsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ChangeAdminGrantsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ChangeAdminGrantsResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -1382,6 +2175,82 @@ func (r GrantAdminRoleResponse) ContentType() string {
 	return ""
 }
 
+type BatchChangeAdminGrantsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *AdminBatchGrantChangesResult
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *AdminError
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *AdminError
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *AdminError
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *AdminError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *AdminError
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r BatchChangeAdminGrantsResponse) GetJSON200() *AdminBatchGrantChangesResult {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r BatchChangeAdminGrantsResponse) GetJSON400() *AdminError {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r BatchChangeAdminGrantsResponse) GetJSON401() *AdminError {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r BatchChangeAdminGrantsResponse) GetJSON403() *AdminError {
+	return r.JSON403
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r BatchChangeAdminGrantsResponse) GetJSON409() *AdminError {
+	return r.JSON409
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r BatchChangeAdminGrantsResponse) GetJSON503() *AdminError {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r BatchChangeAdminGrantsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r BatchChangeAdminGrantsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r BatchChangeAdminGrantsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r BatchChangeAdminGrantsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type ListPlatformOperationsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -1542,6 +2411,75 @@ func (r ListAdminRoleTemplatesResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r ListAdminRoleTemplatesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListAdminRolesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *AdminRolePage
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *AdminError
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *AdminError
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *AdminError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *AdminError
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListAdminRolesResponse) GetJSON200() *AdminRolePage {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r ListAdminRolesResponse) GetJSON400() *AdminError {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ListAdminRolesResponse) GetJSON401() *AdminError {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ListAdminRolesResponse) GetJSON403() *AdminError {
+	return r.JSON403
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r ListAdminRolesResponse) GetJSON503() *AdminError {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r ListAdminRolesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListAdminRolesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListAdminRolesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListAdminRolesResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -1714,6 +2652,19 @@ func (r GetAdminRoleResponse) ContentType() string {
 	return ""
 }
 
+// ListAdministratorsWithResponse performs a GET /api/v1/platform/admin/administrators (the `ListAdministrators` operationId) request.
+//
+// 按学校、群、业务模块、角色或能力反查当前持有显式授权的管理员列表。请求范围先与调用方的 platform.authorization.read 有效范围求交集，无交集返回 403；返回的授权范围均收窄至调用方可见范围。单页最多返回 1,000 项收窄后的授权。超过上限返回 400 invalid_request，调用方可缩小查询范围或降低每页人数。游标绑定操作者、筛选条件与授权范围。
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) ListAdministratorsWithResponse(ctx context.Context, params *ListAdministratorsParams, reqEditors ...RequestEditorFn) (*ListAdministratorsResponse, error) {
+	rsp, err := c.ListAdministrators(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListAdministratorsResponse(rsp)
+}
+
 // GetAdminEffectiveWithResponse performs a GET /api/v1/platform/admin/administrators/{subject}/effective (the `GetAdminEffective` operationId) request.
 //
 // 先检查查询者权限，再从可信身份接口读取被查询者的当前平台管理员身份。平台管理员返回 authorization_mode=platform_admin_all，表示全部能力及全部范围（含敏感能力）；其他管理员返回 explicit_grants 及查询范围内显式授权。查询他人需要该范围的 platform.authorization.read。修订号仅表示显式授权集合，不代表身份修订，客户端不能据此缓存平台管理员身份。
@@ -1725,6 +2676,32 @@ func (c *ClientWithResponses) GetAdminEffectiveWithResponse(ctx context.Context,
 		return nil, err
 	}
 	return ParseGetAdminEffectiveResponse(rsp)
+}
+
+// ChangeAdminGrantsWithBodyWithResponse performs a POST /api/v1/platform/admin/administrators/{subject}/grant-changes (the `ChangeAdminGrants` operationId) request,
+// with any type of body and a specified content type.
+//
+// 在单一预期修订号与事务内原子执行同一管理员的多项角色授予与撤销，仅递增一次修订号，实现新旧角色无空窗切换。禁止给自己增加授权；委托权限规则与单次授予一致。.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) ChangeAdminGrantsWithBodyWithResponse(ctx context.Context, subject string, params *ChangeAdminGrantsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ChangeAdminGrantsResponse, error) {
+	rsp, err := c.ChangeAdminGrantsWithBody(ctx, subject, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseChangeAdminGrantsResponse(rsp)
+}
+
+// ChangeAdminGrantsWithResponse performs a POST /api/v1/platform/admin/administrators/{subject}/grant-changes (the `ChangeAdminGrants` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// 在单一预期修订号与事务内原子执行同一管理员的多项角色授予与撤销，仅递增一次修订号，实现新旧角色无空窗切换。禁止给自己增加授权；委托权限规则与单次授予一致。.
+func (c *ClientWithResponses) ChangeAdminGrantsWithResponse(ctx context.Context, subject string, params *ChangeAdminGrantsParams, body ChangeAdminGrantsJSONRequestBody, reqEditors ...RequestEditorFn) (*ChangeAdminGrantsResponse, error) {
+	rsp, err := c.ChangeAdminGrants(ctx, subject, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseChangeAdminGrantsResponse(rsp)
 }
 
 // RevokeAdminRoleWithBodyWithResponse performs a DELETE /api/v1/platform/admin/administrators/{subject}/grants (the `RevokeAdminRole` operationId) request,
@@ -1779,6 +2756,32 @@ func (c *ClientWithResponses) GrantAdminRoleWithResponse(ctx context.Context, su
 	return ParseGrantAdminRoleResponse(rsp)
 }
 
+// BatchChangeAdminGrantsWithBodyWithResponse performs a POST /api/v1/platform/admin/batch-grant-changes (the `BatchChangeAdminGrants` operationId) request,
+// with any type of body and a specified content type.
+//
+// 多管理员授权变更预览（dry_run=true）与逐项执行（dry_run=false）。单批最多 50 名管理员且批内 subject 不重复。dry_run=false 时必须提供 Idempotency-Key，逐项返回 succeeded、conflict、forbidden 或 not_found 状态及最新修订号。.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) BatchChangeAdminGrantsWithBodyWithResponse(ctx context.Context, params *BatchChangeAdminGrantsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*BatchChangeAdminGrantsResponse, error) {
+	rsp, err := c.BatchChangeAdminGrantsWithBody(ctx, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseBatchChangeAdminGrantsResponse(rsp)
+}
+
+// BatchChangeAdminGrantsWithResponse performs a POST /api/v1/platform/admin/batch-grant-changes (the `BatchChangeAdminGrants` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// 多管理员授权变更预览（dry_run=true）与逐项执行（dry_run=false）。单批最多 50 名管理员且批内 subject 不重复。dry_run=false 时必须提供 Idempotency-Key，逐项返回 succeeded、conflict、forbidden 或 not_found 状态及最新修订号。.
+func (c *ClientWithResponses) BatchChangeAdminGrantsWithResponse(ctx context.Context, params *BatchChangeAdminGrantsParams, body BatchChangeAdminGrantsJSONRequestBody, reqEditors ...RequestEditorFn) (*BatchChangeAdminGrantsResponse, error) {
+	rsp, err := c.BatchChangeAdminGrants(ctx, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseBatchChangeAdminGrantsResponse(rsp)
+}
+
 // ListPlatformOperationsWithResponse performs a GET /api/v1/platform/admin/operations (the `ListPlatformOperations` operationId) request.
 //
 // 按当前有效授权范围向已装配提供方读取并合并审计，时间、来源模块、记录 ID 均按降序排序。每页重新授权；游标绑定操作者、筛选条件、权限范围和提供方集合，并保留各提供方的快照。提供方失败返回部分结果及 missing_modules；缺失在同一分页过程中持续标记，恢复后须重新查询。默认查询全部已装配且获准的来源。旧版本游标不接受。.
@@ -1803,6 +2806,19 @@ func (c *ClientWithResponses) ListAdminRoleTemplatesWithResponse(ctx context.Con
 		return nil, err
 	}
 	return ParseListAdminRoleTemplatesResponse(rsp)
+}
+
+// ListAdminRolesWithResponse performs a GET /api/v1/platform/admin/roles (the `ListAdminRoles` operationId) request.
+//
+// 分页读取不可变角色定义。需要全局或任意范围的 platform.authorization.read 能力；可信平台管理员自动满足。按创建时间与角色 ID 降序排列，游标绑定操作者与筛选条件。
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) ListAdminRolesWithResponse(ctx context.Context, params *ListAdminRolesParams, reqEditors ...RequestEditorFn) (*ListAdminRolesResponse, error) {
+	rsp, err := c.ListAdminRoles(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListAdminRolesResponse(rsp)
 }
 
 // CreateAdminRoleWithBodyWithResponse performs a POST /api/v1/platform/admin/roles (the `CreateAdminRole` operationId) request,
@@ -1844,6 +2860,60 @@ func (c *ClientWithResponses) GetAdminRoleWithResponse(ctx context.Context, role
 	return ParseGetAdminRoleResponse(rsp)
 }
 
+// ParseListAdministratorsResponse parses an HTTP response from a ListAdministratorsWithResponse call
+func ParseListAdministratorsResponse(rsp *http.Response) (*ListAdministratorsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListAdministratorsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AdminAdministratorPage
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest AdminError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest AdminError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest AdminError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest AdminError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseGetAdminEffectiveResponse parses an HTTP response from a GetAdminEffectiveWithResponse call
 func ParseGetAdminEffectiveResponse(rsp *http.Response) (*GetAdminEffectiveResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -1860,6 +2930,74 @@ func ParseGetAdminEffectiveResponse(rsp *http.Response) (*GetAdminEffectiveRespo
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest AdminEffective
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest AdminError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest AdminError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest AdminError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest AdminError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest AdminError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest AdminError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseChangeAdminGrantsResponse parses an HTTP response from a ChangeAdminGrantsWithResponse call
+func ParseChangeAdminGrantsResponse(rsp *http.Response) (*ChangeAdminGrantsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ChangeAdminGrantsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AdminRevision
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -2048,6 +3186,67 @@ func ParseGrantAdminRoleResponse(rsp *http.Response) (*GrantAdminRoleResponse, e
 	return response, nil
 }
 
+// ParseBatchChangeAdminGrantsResponse parses an HTTP response from a BatchChangeAdminGrantsWithResponse call
+func ParseBatchChangeAdminGrantsResponse(rsp *http.Response) (*BatchChangeAdminGrantsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &BatchChangeAdminGrantsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AdminBatchGrantChangesResult
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest AdminError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest AdminError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest AdminError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest AdminError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest AdminError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseListPlatformOperationsResponse parses an HTTP response from a ListPlatformOperationsWithResponse call
 func ParseListPlatformOperationsResponse(rsp *http.Response) (*ListPlatformOperationsResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -2171,6 +3370,60 @@ func ParseListAdminRoleTemplatesResponse(rsp *http.Response) (*ListAdminRoleTemp
 			return nil, err
 		}
 		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest AdminError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListAdminRolesResponse parses an HTTP response from a ListAdminRolesWithResponse call
+func ParseListAdminRolesResponse(rsp *http.Response) (*ListAdminRolesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListAdminRolesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AdminRolePage
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest AdminError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest AdminError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest AdminError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
 		var dest AdminError
