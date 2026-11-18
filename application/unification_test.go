@@ -3,10 +3,12 @@ package application_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -56,7 +58,14 @@ func TestUnifiedRoutesPropagateRequestIDAndDistinguishErrors(t *testing.T) {
 		})...,
 	)
 
+	var unavailable atomic.Bool
 	app, err := application.New(application.Config{Address: address, Enabled: []string{"platform"}}, application.Modules{
+		PlatformReady: func(context.Context) error {
+			if unavailable.Load() {
+				return errors.New("fixture unavailable")
+			}
+			return nil
+		},
 		Routes:        routes,
 		Authenticator: fixedAuth{},
 	})
@@ -125,6 +134,26 @@ func TestUnifiedRoutesPropagateRequestIDAndDistinguishErrors(t *testing.T) {
 	if resp.StatusCode != 400 || eligErr.Code != sdk.InvalidRule || eligErr.RequestId == nil || *eligErr.RequestId != resp.Header.Get("X-Request-ID") {
 		t.Fatalf("expected 400 invalid_rule with request_id, got status=%d body=%+v", resp.StatusCode, eligErr)
 	}
+
+	unavailable.Store(true)
+	for _, path := range []string{"/api/v1/platform/admin/operations", "/api/v1/platform/eligibility/buaa/content.enter"} {
+		resp, err := client.Get("http://" + address + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var body struct {
+			Code      string `json:"code"`
+			RequestID string `json:"request_id"`
+		}
+		err = json.NewDecoder(resp.Body).Decode(&body)
+		resp.Body.Close()
+		if err != nil || resp.StatusCode != http.StatusServiceUnavailable || body.Code != "unavailable" ||
+			!sdk.ErrorCode(body.Code).Valid() || !adminsdk.AdminErrorCode(body.Code).Valid() ||
+			body.RequestID == "" || body.RequestID != resp.Header.Get("X-Request-ID") {
+			t.Fatalf("unready %s: status %d, body %+v, error %v", path, resp.StatusCode, body, err)
+		}
+	}
+
 }
 
 func TestSharedClientCasesMatchGeneratedContracts(t *testing.T) {

@@ -50,6 +50,20 @@ type Route struct {
 	Handler                          http.Handler
 }
 
+type unavailableHandler struct {
+	http.Handler
+	code string
+}
+
+// WithUnavailableCode preserves the handler's published 503 error code when
+// module readiness prevents the router from calling the handler.
+func WithUnavailableCode(handler http.Handler, code string) http.Handler {
+	if handler == nil || code == "" {
+		return handler
+	}
+	return unavailableHandler{Handler: handler, code: code}
+}
+
 type Error = gen.Problem
 type contextKey struct{}
 type principalKey struct{}
@@ -120,12 +134,16 @@ func NewHandler(registry *module.Registry, routes []Route, authn Authenticator, 
 		if route.Access != Public && route.Access != Protected {
 			return nil, errors.New("route access must be explicit")
 		}
+		unavailableCode := "module_unavailable"
+		if h, ok := route.Handler.(unavailableHandler); ok {
+			unavailableCode = h.code
+		}
 		mux.Handle(route.Method+" "+route.Path, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 			available := registry.CapabilityAvailable(ctx, route.Module, route.Capability)
 			cancel()
 			if !available {
-				problem(w, r, 503, "module_unavailable")
+				problem(w, r, 503, unavailableCode)
 				return
 			}
 			if route.Access == Protected {

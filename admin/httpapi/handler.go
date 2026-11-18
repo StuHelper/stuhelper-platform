@@ -72,7 +72,7 @@ func (h Handler) Routes() []transport.Route {
 			Module:     "platform",
 			Capability: "platform.modules",
 			Access:     transport.Public,
-			Handler:    mux,
+			Handler:    transport.WithUnavailableCode(mux, a.ErrUnavailable.Error()),
 		})
 	}
 	return out

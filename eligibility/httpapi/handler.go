@@ -17,6 +17,8 @@ var (
 	ErrInvalidRequest  = errors.New("invalid_request")
 )
 
+const unavailableCode = "unavailable"
+
 type Handler struct {
 	Service      e.Service
 	Authenticate func(*http.Request) (string, error)
@@ -62,9 +64,10 @@ func NewRoutes(service e.Service, authn transport.Authenticator, authz func(cont
 
 // Routes exports GET and PUT eligibility configuration routes for application.New.
 func (h Handler) Routes() []transport.Route {
+	handler := transport.WithUnavailableCode(h, unavailableCode)
 	return []transport.Route{
-		{Method: "GET", Path: "/api/v1/platform/eligibility/{school}/{action}", Module: "platform", Capability: "platform.modules", Access: transport.Public, Handler: h},
-		{Method: "PUT", Path: "/api/v1/platform/eligibility/{school}/{action}", Module: "platform", Capability: "platform.modules", Access: transport.Public, Handler: h},
+		{Method: "GET", Path: "/api/v1/platform/eligibility/{school}/{action}", Module: "platform", Capability: "platform.modules", Access: transport.Public, Handler: handler},
+		{Method: "PUT", Path: "/api/v1/platform/eligibility/{school}/{action}", Module: "platform", Capability: "platform.modules", Access: transport.Public, Handler: handler},
 	}
 }
 
@@ -75,7 +78,7 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var idErr error
 	r, reqID, idErr = transport.EnsureRequestID(w, r)
 	fail := func(err error) {
-		code, status := "unavailable", 503
+		code, status := unavailableCode, 503
 		switch {
 		case errors.Is(err, ErrUnauthenticated):
 			code, status = "unauthenticated", 401
