@@ -16,6 +16,8 @@ scenario_tests:
   PLAT-HISTORY-01:
     - postgres/integration_test.go#TestInstallationFactsAreDurableMonotoneAndUnknownFailsClosed
   AO-01:
+    - admin/governance_limits_test.go#TestAdministratorGrantsSharePageLimitAndHonorCancellation
+    - postgres/admin_governance_test.go#TestAdminRoleListAndScopedAdministratorLookup
     - postgres/admin_test.go#TestAdminAO01AO04ScopeAndSeparateCapabilities
     - postgres/admin_test.go#TestAdminDelegationSelfEscalationAndImmediateRevocation
   AO-02:

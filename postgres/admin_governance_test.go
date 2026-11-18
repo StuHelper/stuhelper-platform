@@ -1,6 +1,8 @@
 package postgres_test
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -267,6 +269,29 @@ func TestAdminAO03AtomicAndBatchGrantChanges(t *testing.T) {
 		},
 	}
 
+	for _, field := range []string{"absent", "null"} {
+		body := map[string]any{"reason": "check required field", "items": batchItems[:1]}
+		if field == "null" {
+			body["dry_run"] = nil
+		}
+		data, err := json.Marshal(body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/platform/admin/batch-grant-changes", bytes.NewReader(data))
+		key := "invalid-dry-run-" + field
+		req.Header.Set("Idempotency-Key", key)
+		response := httptest.NewRecorder()
+		mux.ServeHTTP(response, req)
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("%s dry_run: status %d", field, response.Code)
+		}
+		var receipts int
+		if err := repo.DB.QueryRow(`SELECT count(*) FROM platform.admin_requests WHERE actor=$1 AND key=$2`, delegate.Key(), key).Scan(&receipts); err != nil || receipts != 0 {
+			t.Fatalf("%s dry_run: receipts %d: %v", field, receipts, err)
+		}
+	}
+
 	previewResp, err := client.BatchChangeAdminGrantsWithResponse(ctx, &sdk.BatchChangeAdminGrantsParams{}, sdk.AdminBatchGrantChangesInput{
 		DryRun: true,
 		Reason: "semester handover preview",
@@ -352,14 +377,27 @@ func TestAdminAO03AtomicAndBatchGrantChanges(t *testing.T) {
 		t.Fatalf("replay duplicated audit rows: %d -> %d", auditBefore, auditAfter)
 	}
 
+	conflictKey := "stale-revision-only"
+	conflictInput := sdk.AdminBatchGrantChangesInput{
+		Reason: "stale revision", Items: batchItems[1:2],
+	}
+	conflict, err := client.BatchChangeAdminGrantsWithResponse(ctx, &sdk.BatchChangeAdminGrantsParams{IdempotencyKey: &conflictKey}, conflictInput)
+	if err != nil || conflict.JSON200 == nil || len(conflict.JSON200.Items) != 1 || conflict.JSON200.Items[0].Status != sdk.AdminBatchGrantChangeResultItemStatusConflict {
+		t.Fatalf("expected conflict receipt: %+v %v", conflict, err)
+	}
+	grant(t, s, delegate, "delegator", "1", otherSchool)
 	// Revoking delegate's permission prevents replaying old batch receipts.
 	if _, err = s.Change(ctx, boss, delegate.Key(), "revoke-delegator", a.Mutation{
 		RoleID:           "delegator",
 		Scope:            buaa,
-		ExpectedRevision: "1",
+		ExpectedRevision: "2",
 		Reason:           "end delegation",
 	}, true); err != nil {
 		t.Fatal(err)
+	}
+	replayedConflict, err := client.BatchChangeAdminGrantsWithResponse(ctx, &sdk.BatchChangeAdminGrantsParams{IdempotencyKey: &conflictKey}, conflictInput)
+	if err != nil || replayedConflict.StatusCode() != http.StatusForbidden {
+		t.Fatalf("expected denial of conflict receipt after school revocation, got %+v %v", replayedConflict, err)
 	}
 	revokedReplay, err := client.BatchChangeAdminGrantsWithResponse(ctx, &sdk.BatchChangeAdminGrantsParams{IdempotencyKey: &batchKey}, sdk.AdminBatchGrantChangesInput{
 		DryRun: false,

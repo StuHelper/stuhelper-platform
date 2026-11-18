@@ -166,6 +166,49 @@ func (s Service) ListRoles(ctx context.Context, p account.Principal, f RoleFilte
 	return out, nil
 }
 
+func narrowAdministratorGrants(ctx context.Context, rows []AdministratorSummary, permitted []Scope, remaining int) error {
+	for i := range rows {
+		type grantKey struct {
+			roleID string
+			scope  Scope
+		}
+		seen := map[grantKey]bool{}
+		narrowed := []Grant{}
+		for _, g := range rows[i].Grants {
+			for _, sc := range permitted {
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+				if inter, ok := g.Scope.Intersection(sc); ok {
+					k := grantKey{g.Role.ID, inter}
+					if !seen[k] {
+						if remaining == 0 {
+							return ErrInvalid
+						}
+						remaining--
+						seen[k] = true
+						narrowed = append(narrowed, Grant{Role: g.Role, Scope: inter})
+					}
+				}
+			}
+		}
+		slices.SortFunc(narrowed, func(a, b Grant) int {
+			if c := strings.Compare(a.Role.ID, b.Role.ID); c != 0 {
+				return c
+			}
+			if c := strings.Compare(a.Scope.School, b.Scope.School); c != 0 {
+				return c
+			}
+			if c := strings.Compare(a.Scope.Group, b.Scope.Group); c != 0 {
+				return c
+			}
+			return strings.Compare(a.Scope.Module, b.Scope.Module)
+		})
+		rows[i].Grants = narrowed
+	}
+	return nil
+}
+
 func (s Service) ListAdministrators(ctx context.Context, p account.Principal, f AdministratorFilter) (AdministratorPage, error) {
 	out := AdministratorPage{Items: []AdministratorSummary{}}
 	if f.Limit == 0 {
@@ -247,37 +290,8 @@ func (s Service) ListAdministrators(ctx context.Context, p account.Principal, f 
 		if hasMore {
 			rows = rows[:f.Limit]
 		}
-		for i := range rows {
-			type grantKey struct {
-				roleID string
-				scope  Scope
-			}
-			seen := map[grantKey]bool{}
-			narrowed := []Grant{}
-			for _, g := range rows[i].Grants {
-				for _, sc := range permitted {
-					if inter, ok := g.Scope.Intersection(sc); ok {
-						k := grantKey{g.Role.ID, inter}
-						if !seen[k] {
-							seen[k] = true
-							narrowed = append(narrowed, Grant{Role: g.Role, Scope: inter})
-						}
-					}
-				}
-			}
-			slices.SortFunc(narrowed, func(a, b Grant) int {
-				if c := strings.Compare(a.Role.ID, b.Role.ID); c != 0 {
-					return c
-				}
-				if c := strings.Compare(a.Scope.School, b.Scope.School); c != 0 {
-					return c
-				}
-				if c := strings.Compare(a.Scope.Group, b.Scope.Group); c != 0 {
-					return c
-				}
-				return strings.Compare(a.Scope.Module, b.Scope.Module)
-			})
-			rows[i].Grants = narrowed
+		if err := narrowAdministratorGrants(ctx, rows, permitted, 1000); err != nil {
+			return err
 		}
 		if hasMore {
 			lastSubject := rows[len(rows)-1].Subject
@@ -512,12 +526,12 @@ func (s Service) BatchChangeGrants(ctx context.Context, p account.Principal, key
 		}
 		if b != nil {
 			var cached BatchGrantChangesResult
-			if json.Unmarshal(b, &cached) != nil {
+			if json.Unmarshal(b, &cached) != nil || len(cached.Items) != len(in.Items) {
 				return ErrUnavailable
 			}
-			// Re-verify current permissions for every item that succeeded in the cached execution.
+			// Successful and conflicting items both disclose authorized grant details.
 			for i, item := range in.Items {
-				if i < len(cached.Items) && cached.Items[i].Status == BatchSucceeded {
+				if cached.Items[i].Status == BatchSucceeded || cached.Items[i].Status == BatchConflict {
 					if _, _, authErr := resolveAndAuthorizeTargets(ctx, st, p, platform, callerGrants, item.Subject, item.Add, item.Revoke, roleCache); authErr != nil {
 						return authErr
 					}

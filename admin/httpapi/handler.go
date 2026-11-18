@@ -141,11 +141,16 @@ func (h Handler) serve(w http.ResponseWriter, r *http.Request) {
 		if len(keys) > 1 {
 			err = a.ErrInvalid
 		} else {
-			var in a.BatchGrantChangesInput
-			if err = decodeBody(w, r, &in, 131072); err == nil {
-				if !in.DryRun && len(keys) != 1 {
+			var wire struct {
+				DryRun *bool                    `json:"dry_run"`
+				Reason string                   `json:"reason"`
+				Items  []a.BatchGrantChangeItem `json:"items"`
+			}
+			if err = decodeBody(w, r, &wire, 131072); err == nil {
+				if wire.DryRun == nil || (!*wire.DryRun && len(keys) != 1) {
 					err = a.ErrInvalid
 				} else {
+					in := a.BatchGrantChangesInput{DryRun: *wire.DryRun, Reason: wire.Reason, Items: wire.Items}
 					out, err = h.Service.BatchChangeGrants(r.Context(), p, r.Header.Get("Idempotency-Key"), in)
 				}
 			}

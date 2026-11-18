@@ -12,6 +12,8 @@ updated: 2026-11-18
 
 platform 拥有统一操作记录查询。各业务模块继续拥有原始审计，并与业务写入同事务提交。platform 通过公开提供方接口读取脱敏摘要，不直接访问其他模块数据库，也不复制认证材料或交易载荷。
 
+管理员列表每页最多返回 1,000 项可见授权。学校、群和模块范围求交后超出上限时，接口返回 400。调用方可收窄范围或减少每页人数。
+
 ## 接口与装配
 
 OpenAPI 0.4.0 位于 contracts/admin.openapi.json。Go SDK 位于 sdk/admin，TypeScript 类型位于 sdk/admin.gen.ts。生成与兼容性检查纳入 make check。

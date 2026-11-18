@@ -115,7 +115,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description 按学校、群、业务模块、角色或能力反查当前持有显式授权的管理员列表。请求范围先与调用方的 platform.authorization.read 有效范围求交集，无交集返回 403；返回的授权范围均收窄至调用方可见范围。游标绑定操作者、筛选条件与授权范围。 */
+        /** @description 按学校、群、业务模块、角色或能力反查当前持有显式授权的管理员列表。请求范围先与调用方的 platform.authorization.read 有效范围求交集，无交集返回 403；返回的授权范围均收窄至调用方可见范围。单页最多返回 1,000 项收窄后的授权。超过上限返回 400 invalid_request，调用方可缩小查询范围或降低每页人数。游标绑定操作者、筛选条件与授权范围。 */
         get: operations["listAdministrators"];
         put?: never;
         post?: never;
