@@ -14,6 +14,9 @@
     "scenario_tests": {
       "PLAT-CONFIG-01": [
         "postgres/integration_test.go#TestConfigurationConcurrencyReplayRollbackAndRetention",
+        "postgres/integration_test.go#TestEligibilityActionWhitelistAndMalformedInputsNeverReturn503",
+        "eligibility/admission_test.go#TestAdmissionFailsClosedWhenRulesUnwiredAndPreservesServedSchoolScope",
+        "eligibility/httpapi/handler_test.go#TestEligibilityHTTPActionWhitelistValidationAndProtocolHeaders",
         "eligibility/cache_test.go#TestRuleCacheExpiryInvalidationAndFailure",
         "eligibility/cache_test.go#TestRuleCacheDoesNotReinsertInvalidatedInFlightRead"
       ],
