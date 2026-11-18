@@ -121,6 +121,7 @@
             "name": "Idempotency-Key",
             "in": "header",
             "required": true,
+            "description": "1—128 个非空白可打印 ASCII 字符。",
             "schema": {
               "type": "string",
               "minLength": 1,
@@ -533,10 +534,18 @@
           },
           "supported_conditions": {
             "type": "array",
+            "description": "当前动作允许配置的条件白名单。仅 publish_course 支持 course_enrollment，其余动作支持 content_access、campus_eligibility、phone_bound、identity_verified。",
             "uniqueItems": true,
             "maxItems": 5,
             "items": {
-              "$ref": "#/components/schemas/Condition"
+              "type": "string",
+              "enum": [
+                "content_access",
+                "campus_eligibility",
+                "phone_bound",
+                "identity_verified",
+                "course_enrollment"
+              ]
             }
           }
         }
@@ -556,6 +565,7 @@
           },
           "conditions": {
             "type": "array",
+            "description": "目标动作生效条件集合，必须属于该动作支持的条件白名单（仅 publish_course 允许包含 course_enrollment），越界条件返回 400 invalid_rule。",
             "uniqueItems": true,
             "maxItems": 5,
             "items": {
@@ -593,7 +603,7 @@
       },
       "Action": {
         "type": "string",
-        "description": "动作目录。resources.purchase 与 membership.purchase 默认要求 campus_eligibility；登录由调用方已验证身份保证。各动作独立支持全站规则与授权范围覆盖。",
+        "description": "动作目录。resources.purchase 与 membership.purchase 默认要求 campus_eligibility；登录由调用方已验证身份保证。仅 publish_course 支持 course_enrollment，其余 14 个动作支持 content_access、campus_eligibility、phone_bound、identity_verified。各动作独立支持全站规则与授权范围覆盖。",
         "enum": [
           "content.enter",
           "read_full",

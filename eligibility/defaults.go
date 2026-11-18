@@ -33,6 +33,9 @@ func Actions() []string {
 	return slices.Clone(allActions)
 }
 
+// SupportedConditions returns the explicit condition whitelist for an action.
+// Only publish_course has a course enrollment context; other actions reject
+// course_enrollment so misconfiguration cannot trigger runtime 503 failures.
 func SupportedConditions(action string) ([]Condition, error) {
 	switch action {
 	case "publish_course":
@@ -42,6 +45,11 @@ func SupportedConditions(action string) ([]Condition, error) {
 	default:
 		return nil, ErrRule
 	}
+}
+
+func ValidAction(action string) bool {
+	_, err := SupportedConditions(action)
+	return err == nil
 }
 
 func (Defaults) Effective(_ context.Context, action, _ string) (Rule, error) {

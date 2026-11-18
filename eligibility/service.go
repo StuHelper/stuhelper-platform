@@ -59,23 +59,40 @@ type Service struct {
 	Now  func() time.Time
 }
 
-func validToken(s string, maxLen int) bool {
-	return s != "" && len(s) <= maxLen && utf8.ValidString(s) && !strings.ContainsFunc(s, unicode.IsControl) && strings.TrimSpace(s) == s
+// ValidSchool checks that school is "*" or a non-blank, control-free UTF-8 identifier up to 128 bytes.
+func ValidSchool(school string) bool {
+	return validToken(school, 128)
+}
+
+func validActor(actor string) bool {
+	return actor != "" && len(actor) <= 2048 && utf8.ValidString(actor) && !strings.ContainsFunc(actor, unicode.IsControl) && strings.TrimSpace(actor) == actor
+}
+
+func validIdempotencyKey(key string) bool {
+	if len(key) < 1 || len(key) > 128 {
+		return false
+	}
+	for i := 0; i < len(key); i++ {
+		if key[i] < 0x21 || key[i] > 0x7e {
+			return false
+		}
+	}
+	return true
 }
 
 func validReason(s string) bool {
 	return s != "" && len(s) <= 512 && utf8.ValidString(s) && !strings.ContainsFunc(s, unicode.IsControl) && strings.TrimSpace(s) != ""
 }
 
-func enrichRule(action, school string, r Rule) Rule {
+func enrichRule(action, school string, r Rule) (Rule, error) {
 	if r.Conditions == nil {
 		r.Conditions = []Condition{}
 	}
-	if r.SupportedConditions == nil {
-		if supported, err := SupportedConditions(action); err == nil {
-			r.SupportedConditions = supported
-		}
+	supported, err := SupportedConditions(action)
+	if err != nil {
+		return Rule{}, err
 	}
+	r.SupportedConditions = supported
 	if r.Source == "" {
 		if school == "*" {
 			r.Source = SourceGlobal
@@ -86,7 +103,7 @@ func enrichRule(action, school string, r Rule) Rule {
 	if r.GlobalConditions == nil && school == "*" {
 		r.GlobalConditions = slices.Clone(r.Conditions)
 	}
-	return r
+	return r, nil
 }
 
 func (s Service) now() time.Time {
@@ -100,24 +117,24 @@ func (s Service) Get(ctx context.Context, school, action string) (Rule, error) {
 	if s.Repo == nil {
 		return Rule{}, ErrUnavailable
 	}
-	if !validToken(school, 128) {
+	if !ValidSchool(school) {
 		return Rule{}, ErrRule
 	}
-	if _, err := (Defaults{}).Effective(ctx, action, school); err != nil {
+	if !ValidAction(action) {
 		return Rule{}, ErrRule
 	}
 	r, err := s.Repo.Effective(ctx, action, school)
 	if err != nil {
 		return Rule{}, err
 	}
-	return enrichRule(action, school, r), nil
+	return enrichRule(action, school, r)
 }
 
 func (s Service) GetSchool(ctx context.Context, school string) (Configuration, error) {
 	if s.Repo == nil {
 		return Configuration{}, ErrUnavailable
 	}
-	if !validToken(school, 128) {
+	if !ValidSchool(school) {
 		return Configuration{}, ErrRule
 	}
 	call, cancel := context.WithTimeout(ctx, 3*time.Second)
@@ -131,7 +148,10 @@ func (s Service) GetSchool(ctx context.Context, school string) (Configuration, e
 		if err != nil {
 			return Configuration{}, err
 		}
-		r = enrichRule(action, school, r)
+		r, err = enrichRule(action, school, r)
+		if err != nil {
+			return Configuration{}, err
+		}
 		out.Version = r.Version
 		out.Rules[action] = r
 	}
@@ -142,7 +162,7 @@ func (s Service) Set(ctx context.Context, actor, key, school, action string, in 
 	if s.Repo == nil {
 		return Rule{}, ErrUnavailable
 	}
-	if !validToken(actor, 2048) || !validToken(key, 128) || !validToken(school, 128) || !validToken(action, 128) || !validToken(in.ExpectedVersion, 128) {
+	if !validActor(actor) || !validIdempotencyKey(key) || !ValidSchool(school) || !validToken(action, 128) || !validToken(in.ExpectedVersion, 128) {
 		return Rule{}, ErrRule
 	}
 	if in.Reason != "" && !validReason(in.Reason) {
@@ -157,7 +177,7 @@ func (s Service) Set(ctx context.Context, actor, key, school, action string, in 
 	if err != nil {
 		return Rule{}, err
 	}
-	return enrichRule(action, school, out), nil
+	return enrichRule(action, school, out)
 }
 
 func (s Service) Reset(ctx context.Context, actor, key, school, action string, in Reset) (Rule, error) {
@@ -165,7 +185,7 @@ func (s Service) Reset(ctx context.Context, actor, key, school, action string, i
 		return Rule{}, ErrUnavailable
 	}
 	// Global scope "*" holds the fallback baseline and cannot be deleted as a school override.
-	if school == "*" || !validToken(actor, 2048) || !validToken(key, 128) || !validToken(school, 128) || !validToken(action, 128) || !validToken(in.ExpectedVersion, 128) || !validReason(in.Reason) {
+	if school == "*" || !validActor(actor) || !validIdempotencyKey(key) || !ValidSchool(school) || !validToken(action, 128) || !validToken(in.ExpectedVersion, 128) || !validReason(in.Reason) {
 		return Rule{}, ErrRule
 	}
 	if _, err := SupportedConditions(action); err != nil {
@@ -181,5 +201,5 @@ func (s Service) Reset(ctx context.Context, actor, key, school, action string, i
 	if err != nil {
 		return Rule{}, err
 	}
-	return enrichRule(action, school, out), nil
+	return enrichRule(action, school, out)
 }

@@ -14,6 +14,10 @@ type Facts interface {
 }
 
 // Admission evaluates independently named actions without any business-module types.
+// Rules and Facts must both be explicitly wired (use Defaults{} in tests when static
+// defaults are intended). An empty target school evaluates against the server-owned
+// Admission.School so directory and favorite callers can resolve the served school
+// before checking object ownership; any explicit school mismatch is rejected.
 type Admission struct {
 	School string
 	Rules  Rules
@@ -21,18 +25,14 @@ type Admission struct {
 }
 
 func (a Admission) Check(ctx context.Context, subject, school, action string) (Result, error) {
-	if a.School == "" || a.Facts == nil {
+	if !ValidSchool(a.School) || a.School == "*" || a.Rules == nil || a.Facts == nil {
 		return Result{}, ErrUnavailable
 	}
-	if subject == "" || school != "" && school != a.School {
+	if !validActor(subject) || school != "" && school != a.School {
 		return Result{}, ErrForbidden
 	}
-	rules := a.Rules
-	if rules == nil {
-		rules = Defaults{}
-	}
-	rule, err := rules.Effective(ctx, action, a.School)
-	if err != nil || Validate(rule) != nil {
+	rule, err := a.Rules.Effective(ctx, action, a.School)
+	if err != nil || ValidateAction(action, rule) != nil {
 		return Result{}, ErrUnavailable
 	}
 	facts := map[Condition]Fact{}

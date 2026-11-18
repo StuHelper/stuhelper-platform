@@ -54,8 +54,8 @@ func buildEffectiveRule(action, school string, schoolRev int64, globalRaw, schoo
 }
 
 func (r *Repository) Effective(ctx context.Context, action, school string) (e.Rule, error) {
-	if _, err := (e.Defaults{}).Effective(ctx, action, school); err != nil {
-		return e.Rule{}, err
+	if !e.ValidSchool(school) || !e.ValidAction(action) {
+		return e.Rule{}, e.ErrRule
 	}
 	call, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
@@ -78,6 +78,9 @@ func (r *Repository) Effective(ctx context.Context, action, school string) (e.Ru
 }
 
 func (r *Repository) SchoolRules(ctx context.Context, school string) (e.Configuration, error) {
+	if !e.ValidSchool(school) {
+		return e.Configuration{}, e.ErrRule
+	}
 	call, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	out := e.Configuration{School: school, Rules: map[string]e.Rule{}}

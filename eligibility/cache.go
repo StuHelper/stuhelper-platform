@@ -29,7 +29,7 @@ func (c *CachedRules) now() time.Time {
 }
 
 func copyRule(r Rule) Rule {
-	r.Conditions = slices.Clone(r.Conditions)
+	r.Conditions = append([]Condition{}, r.Conditions...)
 	if r.GlobalConditions != nil {
 		r.GlobalConditions = slices.Clone(r.GlobalConditions)
 	}

@@ -5,6 +5,9 @@ package eligibility
 import (
 	"errors"
 	"slices"
+	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 type Condition string
@@ -90,8 +93,12 @@ func (r Result) Evaluation(school, action string) Evaluation {
 
 var ErrRule = errors.New("invalid_eligibility_rule")
 
+func validToken(s string, maxLen int) bool {
+	return s != "" && len(s) <= maxLen && utf8.ValidString(s) && !strings.ContainsFunc(s, unicode.IsControl) && !strings.ContainsFunc(s, unicode.IsSpace)
+}
+
 func Validate(rule Rule) error {
-	if rule.Version == "" || len(rule.Version) > 128 || len(rule.Conditions) > 5 {
+	if !validToken(rule.Version, 128) || len(rule.Conditions) > 5 {
 		return ErrRule
 	}
 	seen := map[Condition]bool{}
@@ -109,6 +116,8 @@ func Validate(rule Rule) error {
 	return nil
 }
 
+// ValidateAction verifies both structural rule invariants and that every
+// configured condition is supported by the target action's fact providers.
 func ValidateAction(action string, rule Rule) error {
 	if err := Validate(rule); err != nil {
 		return err

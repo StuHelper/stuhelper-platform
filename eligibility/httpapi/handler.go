@@ -87,7 +87,7 @@ func (h Handler) serveCheck(w http.ResponseWriter, r *http.Request, actor string
 	}
 	school := q.Get("school")
 	rawActions := q.Get("actions")
-	if school == "" || rawActions == "" {
+	if !e.ValidSchool(school) || rawActions == "" {
 		writeFailure(w, e.ErrRule)
 		return
 	}
@@ -116,7 +116,8 @@ func (h Handler) serveCheck(w http.ResponseWriter, r *http.Request, actor string
 
 func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	if h.Authenticate == nil {
 		writeFailure(w, e.ErrUnavailable)
 		return
@@ -135,19 +136,32 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	school, action := r.PathValue("school"), r.PathValue("action")
+	if !e.ValidSchool(school) || (action != "" && !e.ValidAction(action)) {
+		writeFailure(w, e.ErrRule)
+		return
+	}
+	allowed := "GET, HEAD"
+	if action != "" {
+		allowed += ", PUT, DELETE"
+	}
+	if r.Method != "GET" && r.Method != "HEAD" && (action == "" || r.Method != "PUT" && r.Method != "DELETE") {
+		w.Header().Set("Allow", allowed)
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		_ = json.NewEncoder(w).Encode(map[string]string{"code": "method_not_allowed"})
+		return
+	}
 	if err = h.Authorize(r.Context(), actor, school); err != nil {
 		writeFailure(w, err)
 		return
 	}
 	if action == "" {
-		if r.Method != "GET" {
-			w.Header().Set("Allow", "GET")
-			w.WriteHeader(405)
-			return
-		}
 		cfg, getErr := h.Service.GetSchool(r.Context(), school)
 		if getErr != nil {
 			writeFailure(w, getErr)
+			return
+		}
+		if r.Method == "HEAD" {
+			w.WriteHeader(http.StatusOK)
 			return
 		}
 		_ = json.NewEncoder(w).Encode(cfg)
@@ -155,7 +169,7 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	var result e.Rule
 	switch r.Method {
-	case "GET":
+	case "GET", "HEAD":
 		result, err = h.Service.Get(r.Context(), school, action)
 	case "PUT":
 		var in e.Change
@@ -171,13 +185,13 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		result, err = h.Service.Reset(r.Context(), actor, r.Header.Get("Idempotency-Key"), school, action, in)
-	default:
-		w.Header().Set("Allow", "GET, PUT, DELETE")
-		w.WriteHeader(405)
-		return
 	}
 	if err != nil {
 		writeFailure(w, err)
+		return
+	}
+	if r.Method == "HEAD" {
+		w.WriteHeader(http.StatusOK)
 		return
 	}
 	_ = json.NewEncoder(w).Encode(result)

@@ -64,10 +64,12 @@ export interface components {
             conditions: ("content_access" | "campus_eligibility" | "phone_bound" | "identity_verified" | "course_enrollment")[];
             source?: components["schemas"]["RuleSource"];
             global_conditions?: components["schemas"]["Condition"][];
-            supported_conditions?: components["schemas"]["Condition"][];
+            /** @description 当前动作允许配置的条件白名单。仅 publish_course 支持 course_enrollment，其余动作支持 content_access、campus_eligibility、phone_bound、identity_verified。 */
+            supported_conditions?: ("content_access" | "campus_eligibility" | "phone_bound" | "identity_verified" | "course_enrollment")[];
         };
         Change: {
             expected_version: string;
+            /** @description 目标动作生效条件集合，必须属于该动作支持的条件白名单（仅 publish_course 允许包含 course_enrollment），越界条件返回 400 invalid_rule。 */
             conditions: ("content_access" | "campus_eligibility" | "phone_bound" | "identity_verified" | "course_enrollment")[];
             /** @description 配置变更原因，写入平台审计记录。 */
             reason?: string;
@@ -77,7 +79,7 @@ export interface components {
             evaluation?: components["schemas"]["EligibilityEvaluation"];
         };
         /**
-         * @description 动作目录。resources.purchase 与 membership.purchase 默认要求 campus_eligibility；登录由调用方已验证身份保证。各动作独立支持全站规则与授权范围覆盖。
+         * @description 动作目录。resources.purchase 与 membership.purchase 默认要求 campus_eligibility；登录由调用方已验证身份保证。仅 publish_course 支持 course_enrollment，其余 14 个动作支持 content_access、campus_eligibility、phone_bound、identity_verified。各动作独立支持全站规则与授权范围覆盖。
          * @enum {string}
          */
         Action: "content.enter" | "read_full" | "vote" | "bookmark" | "report" | "resources.discover" | "resources.download.public" | "resources.download.restricted" | "resources.purchase" | "membership.purchase" | "publish_course" | "publish_mentor" | "reply" | "resources.upload" | "reply_teacher";
@@ -190,6 +192,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                /** @description 1—128 个非空白可打印 ASCII 字符。 */
                 "Idempotency-Key": string;
             };
             path: {
