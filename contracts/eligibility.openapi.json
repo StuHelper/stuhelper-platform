@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "StuHelper action eligibility configuration",
-    "version": "0.2.0"
+    "version": "0.3.0"
   },
   "paths": {
     "/api/v1/platform/eligibility/{school}/{action}": {
@@ -206,6 +206,283 @@
             }
           }
         }
+      },
+      "delete": {
+        "operationId": "resetEligibilityRule",
+        "description": "删除指定学校的显式覆盖规则并恢复继承全站规则；禁止对全站 * 执行删除。不存在学校覆盖时返回 409。",
+        "parameters": [
+          {
+            "name": "school",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          {
+            "name": "action",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Action"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        ],
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Reset"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "恢复继承后的生效规则或原操作重放结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Rule"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数无效或禁止删除全站默认范围",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无当前学校配置权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "版本冲突、幂等键冲突或该学校不存在覆盖规则",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "配置不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/eligibility/{school}": {
+      "get": {
+        "operationId": "getSchoolEligibility",
+        "description": "读取指定学校或全站（*）全部 15 个动作的生效规则矩阵、规则来源、全站基准条件与当前范围修订号。",
+        "parameters": [
+          {
+            "name": "school",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        ],
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "整校或全站规则矩阵",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SchoolConfiguration"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无当前学校配置权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "配置不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/eligibility-check": {
+      "get": {
+        "operationId": "checkEligibilityActions",
+        "description": "面向已登录师生前端与移动端的批量动作资格预检接口。一次返回当前账号在指定学校与动作集合上的满足状态、缺失条件与暂不可用条件。",
+        "parameters": [
+          {
+            "name": "school",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          {
+            "name": "actions",
+            "in": "query",
+            "required": true,
+            "style": "form",
+            "explode": false,
+            "schema": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 15,
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/components/schemas/Action"
+              }
+            }
+          }
+        ],
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "动作资格预检结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EligibilityEvaluationBatch"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "跨校或身份被拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "资格规则不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
       }
     }
   },
@@ -242,6 +519,17 @@
                 "identity_verified",
                 "course_enrollment"
               ]
+            }
+          },
+          "source": {
+            "$ref": "#/components/schemas/RuleSource"
+          },
+          "global_conditions": {
+            "type": "array",
+            "uniqueItems": true,
+            "maxItems": 5,
+            "items": {
+              "$ref": "#/components/schemas/Condition"
             }
           },
           "supported_conditions": {
@@ -290,6 +578,12 @@
                 "course_enrollment"
               ]
             }
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "description": "配置变更原因，写入平台审计记录。"
           }
         }
       },
@@ -301,6 +595,9 @@
         "properties": {
           "code": {
             "type": "string"
+          },
+          "evaluation": {
+            "$ref": "#/components/schemas/EligibilityEvaluation"
           }
         }
       },
@@ -324,6 +621,138 @@
           "resources.upload",
           "reply_teacher"
         ]
+      },
+      "Condition": {
+        "type": "string",
+        "enum": [
+          "content_access",
+          "campus_eligibility",
+          "phone_bound",
+          "identity_verified",
+          "course_enrollment"
+        ]
+      },
+      "RuleSource": {
+        "type": "string",
+        "enum": [
+          "initial_default",
+          "global",
+          "school_override"
+        ]
+      },
+      "Reset": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "expected_version",
+          "reason"
+        ],
+        "properties": {
+          "expected_version": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        }
+      },
+      "SchoolConfiguration": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "school",
+          "version",
+          "rules"
+        ],
+        "properties": {
+          "school": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "rules": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Rule"
+            }
+          }
+        }
+      },
+      "EligibilityEvaluation": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "action",
+          "school",
+          "allowed",
+          "rule_version",
+          "satisfied_conditions",
+          "missing_conditions",
+          "unavailable_conditions"
+        ],
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/Action"
+          },
+          "school": {
+            "type": "string"
+          },
+          "allowed": {
+            "type": "boolean"
+          },
+          "rule_version": {
+            "type": "string"
+          },
+          "satisfied_conditions": {
+            "type": "array",
+            "uniqueItems": true,
+            "maxItems": 5,
+            "items": {
+              "$ref": "#/components/schemas/Condition"
+            }
+          },
+          "missing_conditions": {
+            "type": "array",
+            "uniqueItems": true,
+            "maxItems": 5,
+            "items": {
+              "$ref": "#/components/schemas/Condition"
+            }
+          },
+          "unavailable_conditions": {
+            "type": "array",
+            "uniqueItems": true,
+            "maxItems": 5,
+            "items": {
+              "$ref": "#/components/schemas/Condition"
+            }
+          }
+        }
+      },
+      "EligibilityEvaluationBatch": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "school",
+          "items"
+        ],
+        "properties": {
+          "school": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "maxItems": 15,
+            "items": {
+              "$ref": "#/components/schemas/EligibilityEvaluation"
+            }
+          }
+        }
       }
     }
   }

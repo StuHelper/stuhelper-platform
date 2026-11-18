@@ -155,8 +155,8 @@ func TestEligibilityHTTPActionWhitelistValidationAndProtocolHeaders(t *testing.T
 	}
 
 	w = httptest.NewRecorder()
-	mux.ServeHTTP(w, httptest.NewRequest("DELETE", "/api/v1/platform/eligibility/buaa/content.enter", nil))
-	if w.Code != 405 || w.Header().Get("Allow") == "" || !strings.Contains(w.Body.String(), `"code"`) {
+	mux.ServeHTTP(w, httptest.NewRequest("PATCH", "/api/v1/platform/eligibility/buaa/content.enter", nil))
+	if w.Code != 405 || w.Header().Get("Allow") != "GET, HEAD, PUT, DELETE" || !strings.Contains(w.Body.String(), `"code"`) {
 		t.Fatalf("405 response mismatch: code=%d allow=%q body=%q", w.Code, w.Header().Get("Allow"), w.Body.String())
 	}
 }

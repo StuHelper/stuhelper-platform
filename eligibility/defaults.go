@@ -1,11 +1,37 @@
 package eligibility
 
-import "context"
+import (
+	"context"
+	"slices"
+)
 
 type Rules interface {
 	Effective(context.Context, string, string) (Rule, error)
 }
+
 type Defaults struct{}
+
+var allActions = []string{
+	"content.enter",
+	"read_full",
+	"vote",
+	"bookmark",
+	"report",
+	"resources.discover",
+	"resources.download.public",
+	"resources.download.restricted",
+	"resources.purchase",
+	"membership.purchase",
+	"publish_course",
+	"publish_mentor",
+	"reply",
+	"resources.upload",
+	"reply_teacher",
+}
+
+func Actions() []string {
+	return slices.Clone(allActions)
+}
 
 // SupportedConditions returns the explicit condition whitelist for an action.
 // Only publish_course has a course enrollment context; other actions reject
@@ -31,7 +57,12 @@ func (Defaults) Effective(_ context.Context, action, _ string) (Rule, error) {
 	if err != nil {
 		return Rule{}, ErrRule
 	}
-	rule := Rule{Version: "initial-20261108", Conditions: []Condition{}, SupportedConditions: supported}
+	rule := Rule{
+		Version:             "initial-20261108",
+		Conditions:          []Condition{},
+		Source:              SourceInitialDefault,
+		SupportedConditions: supported,
+	}
 	switch action {
 	case "content.enter", "read_full", "vote", "bookmark", "report", "resources.discover", "resources.download.public", "resources.download.restricted":
 		rule.Conditions = []Condition{Content}
@@ -46,5 +77,6 @@ func (Defaults) Effective(_ context.Context, action, _ string) (Rule, error) {
 	default:
 		return Rule{}, ErrRule
 	}
+	rule.GlobalConditions = slices.Clone(rule.Conditions)
 	return rule, nil
 }
