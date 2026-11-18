@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 )
 
 var ErrConflict = errors.New("eligibility_conflict")
@@ -32,28 +33,60 @@ type Service struct {
 	Now  func() time.Time
 }
 
+// ValidSchool checks that school is "*" or a non-blank, control-free UTF-8 identifier up to 128 bytes.
+func ValidSchool(school string) bool {
+	return validToken(school, 128)
+}
+
+func validActor(actor string) bool {
+	return actor != "" && len(actor) <= 2048 && utf8.ValidString(actor) && !strings.ContainsFunc(actor, unicode.IsControl) && strings.TrimSpace(actor) == actor
+}
+
+func validIdempotencyKey(key string) bool {
+	if len(key) < 1 || len(key) > 128 {
+		return false
+	}
+	for i := 0; i < len(key); i++ {
+		if key[i] < 0x21 || key[i] > 0x7e {
+			return false
+		}
+	}
+	return true
+}
+
 func (s Service) Get(ctx context.Context, school, action string) (Rule, error) {
 	if s.Repo == nil {
 		return Rule{}, ErrUnavailable
 	}
-	if _, err := (Defaults{}).Effective(ctx, action, school); err != nil {
+	if !ValidSchool(school) {
 		return Rule{}, ErrRule
 	}
-	return s.Repo.Effective(ctx, action, school)
+	supported, err := SupportedConditions(action)
+	if err != nil {
+		return Rule{}, ErrRule
+	}
+	rule, err := s.Repo.Effective(ctx, action, school)
+	if err != nil {
+		return Rule{}, err
+	}
+	if rule.Conditions == nil {
+		rule.Conditions = []Condition{}
+	}
+	rule.SupportedConditions = supported
+	return rule, nil
 }
 func (s Service) Set(ctx context.Context, actor, key, school, action string, in Change) (Rule, error) {
 	if s.Repo == nil {
 		return Rule{}, ErrUnavailable
 	}
-	for _, v := range []string{actor, key, school, action, in.ExpectedVersion} {
-		if v == "" || len(v) > 2048 || strings.ContainsFunc(v, unicode.IsControl) {
-			return Rule{}, ErrRule
-		}
-	}
-	if in.Conditions == nil || len(key) > 128 || len(school) > 128 || Validate(Rule{Version: in.ExpectedVersion, Conditions: in.Conditions}) != nil {
+	if !validActor(actor) || !validIdempotencyKey(key) || !ValidSchool(school) || in.Conditions == nil {
 		return Rule{}, ErrRule
 	}
-	if _, err := (Defaults{}).Effective(ctx, action, school); err != nil {
+	supported, err := SupportedConditions(action)
+	if err != nil {
+		return Rule{}, ErrRule
+	}
+	if ValidateAction(action, Rule{Version: in.ExpectedVersion, Conditions: in.Conditions}) != nil {
 		return Rule{}, ErrRule
 	}
 	now := time.Now().UTC()
@@ -62,5 +95,13 @@ func (s Service) Set(ctx context.Context, actor, key, school, action string, in 
 	}
 	call, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-	return s.Repo.Apply(call, Update{actor, key, school, action, in, now})
+	rule, err := s.Repo.Apply(call, Update{actor, key, school, action, in, now})
+	if err != nil {
+		return Rule{}, err
+	}
+	if rule.Conditions == nil {
+		rule.Conditions = []Condition{}
+	}
+	rule.SupportedConditions = supported
+	return rule, nil
 }

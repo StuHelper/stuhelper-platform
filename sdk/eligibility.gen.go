@@ -127,11 +127,39 @@ func (e RuleConditions) Valid() bool {
 	}
 }
 
-// Action 动作目录。resources.purchase 与 membership.purchase 默认要求 campus_eligibility；登录由调用方已验证身份保证。各动作独立支持全站规则与授权范围覆盖。
+// Defines values for RuleSupportedConditions.
+const (
+	RuleSupportedConditionsCampusEligibility RuleSupportedConditions = "campus_eligibility"
+	RuleSupportedConditionsContentAccess     RuleSupportedConditions = "content_access"
+	RuleSupportedConditionsCourseEnrollment  RuleSupportedConditions = "course_enrollment"
+	RuleSupportedConditionsIdentityVerified  RuleSupportedConditions = "identity_verified"
+	RuleSupportedConditionsPhoneBound        RuleSupportedConditions = "phone_bound"
+)
+
+// Valid indicates whether the value is a known member of the RuleSupportedConditions enum.
+func (e RuleSupportedConditions) Valid() bool {
+	switch e {
+	case RuleSupportedConditionsCampusEligibility:
+		return true
+	case RuleSupportedConditionsContentAccess:
+		return true
+	case RuleSupportedConditionsCourseEnrollment:
+		return true
+	case RuleSupportedConditionsIdentityVerified:
+		return true
+	case RuleSupportedConditionsPhoneBound:
+		return true
+	default:
+		return false
+	}
+}
+
+// Action 动作目录。resources.purchase 与 membership.purchase 默认要求 campus_eligibility；登录由调用方已验证身份保证。仅 publish_course 支持 course_enrollment，其余 14 个动作支持 content_access、campus_eligibility、phone_bound、identity_verified。各动作独立支持全站规则与授权范围覆盖。
 type Action string
 
 // Change defines model for Change.
 type Change struct {
+	// Conditions 目标动作生效条件集合，必须属于该动作支持的条件白名单（仅 publish_course 允许包含 course_enrollment），越界条件返回 400 invalid_rule。
 	Conditions      []ChangeConditions `json:"conditions"`
 	ExpectedVersion string             `json:"expected_version"`
 }
@@ -147,14 +175,21 @@ type Error struct {
 // Rule defines model for Rule.
 type Rule struct {
 	Conditions []RuleConditions `json:"conditions"`
-	Version    string           `json:"version"`
+
+	// SupportedConditions 当前动作允许配置的条件白名单。仅 publish_course 支持 course_enrollment，其余动作支持 content_access、campus_eligibility、phone_bound、identity_verified。
+	SupportedConditions *[]RuleSupportedConditions `json:"supported_conditions,omitempty"`
+	Version             string                     `json:"version"`
 }
 
 // RuleConditions defines model for Rule.Conditions.
 type RuleConditions string
 
+// RuleSupportedConditions defines model for Rule.SupportedConditions.
+type RuleSupportedConditions string
+
 // SetEligibilityRuleParams defines parameters for SetEligibilityRule.
 type SetEligibilityRuleParams struct {
+	// IdempotencyKey 1—128 个非空白可打印 ASCII 字符。
 	IdempotencyKey string `json:"Idempotency-Key"`
 }
 
