@@ -87,7 +87,7 @@ platform 原始审计记录写入事务 ID，并用 PostgreSQL 可见性快照�
 
 ## 数据库与后续接入
 
-迁移身份执行 postgres.Migrate，新增表和审计列，不覆盖旧业务数据。audit_snapshots 需要 SELECT／INSERT／UPDATE／DELETE，audit_snapshot_slot 序列需要 USAGE；现有按 schema 授权脚本须在迁移后重跑。快照元数据独立提交，查询失败留下的条目仍受容量和过期规则限制。
+迁移身份执行 postgres.Migrate，按 platform.schema_migrations 记录的版本号增量执行未应用的 DDL，避免重复重启时对存量审计表申请排他锁，不覆盖旧业务数据。audit_snapshots 需要 SELECT／INSERT／UPDATE／DELETE，audit_snapshot_slot 序列需要 USAGE；现有按 schema 授权脚本须在迁移后重跑。快照元数据独立提交，查询失败留下的条目仍受容量和过期规则限制。
 
 audit_retention 保存清理修订号，运行身份需要 SELECT／UPDATE；audit 的 recorded_xid 由数据库默认写入。
 

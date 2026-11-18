@@ -13,6 +13,7 @@
     "capability_requires": {},
     "scenario_tests": {
       "PLAT-CONFIG-01": [
+        "postgres/migration_test.go#TestIncrementalMigrationPreservesExistingSchoolRevisions",
         "postgres/integration_test.go#TestConfigurationConcurrencyReplayRollbackAndRetention",
         "postgres/integration_test.go#TestEligibilityActionWhitelistAndMalformedInputsNeverReturn503",
         "eligibility/admission_test.go#TestAdmissionFailsClosedWhenRulesUnwiredAndPreservesServedSchoolScope",
@@ -39,6 +40,14 @@
       ],
       "AO-04": [
         "postgres/admin_test.go#TestAdminAO01AO04ScopeAndSeparateCapabilities"
+      ],
+      "AO-05": [
+        "postgres/admin_platform_test.go#TestPlatformAdministratorAllCapabilitiesAndDelegation",
+        "postgres/admin_platform_test.go#TestPlatformEffectiveModeUsesCurrentTargetIdentity"
+      ],
+      "AO-06": [
+        "postgres/audit_test.go#TestAuditPartialResultsStayMarkedAndRejectBadProvider",
+        "postgres/audit_test.go#TestAuditHTTPGeneratedClientPartialResponse"
       ],
       "PLAT-ADMIN-01": [
         "postgres/admin_test.go#TestAdminAtomicAuditFailureAndDatabaseIsolation",
