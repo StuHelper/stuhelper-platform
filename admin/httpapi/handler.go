@@ -62,8 +62,9 @@ func failure(w http.ResponseWriter, err error) {
 	_ = json.NewEncoder(w).Encode(map[string]string{"code": code})
 }
 func (h Handler) serve(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	if h.Authenticate == nil {
 		failure(w, a.ErrUnavailable)
 		return
@@ -92,8 +93,7 @@ func (h Handler) serve(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.URL.Path == "/api/v1/platform/admin/role-templates":
 		// Templates disclose only public suggestions, but still require a live identity.
-		_, err = h.Service.Effective(r.Context(), p, p.Key(), a.Global)
-		out = a.Templates()
+		out, err = h.Service.Templates(r.Context(), p)
 	case r.Method == "POST":
 		var in a.RoleInput
 		if err = decode(w, r, &in); err == nil {
@@ -130,6 +130,10 @@ func (h Handler) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		failure(w, err)
+		return
+	}
+	if r.Method == "HEAD" {
+		w.WriteHeader(http.StatusOK)
 		return
 	}
 	_ = json.NewEncoder(w).Encode(out)

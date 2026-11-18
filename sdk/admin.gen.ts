@@ -11,7 +11,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description 六种初始模板仅提供建议能力；不自动授权，不包含敏感能力。 */
+        /** @description 六种初始模板仅提供建议能力，包含稳定国际化翻译键 label_key；不自动授权，不包含敏感能力。 */
         get: operations["listAdminRoleTemplates"];
         put?: never;
         post?: never;
@@ -122,6 +122,8 @@ export interface components {
         AdminRole: {
             id: string;
             name: string;
+            /** @description 内置角色模板的国际化翻译键（如 platform.admin.role_template.platform）；自定义角色省略此字段。 */
+            label_key?: string;
             capabilities: string[];
         };
         AdminRoleInput: {

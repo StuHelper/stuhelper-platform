@@ -21,9 +21,12 @@ scenario_tests:
   AO-02:
     - postgres/admin_test.go#TestAdminAO02ConcurrentRevisionUniquenessAndReplay
     - postgres/admin_test.go#TestAdminHTTPAuthenticationValidationAndConflict
+    - postgres/admin_test.go#TestAdminReplayExpiryRevokedTargetAndHTTPBoundaries
   AO-04:
     - postgres/admin_test.go#TestAdminAO01AO04ScopeAndSeparateCapabilities
   PLAT-ADMIN-01:
+    - admin/service_test.go#TestEffectiveDecouplesTargetIdentityFromViewAndAllowsRevokedTargetInspection
+    - admin/service_test.go#TestChangeLoadsDelegatorEffectiveGrantsOnceAndRejectsMalformedInputs
     - postgres/admin_test.go#TestAdminAtomicAuditFailureAndDatabaseIsolation
     - postgres/admin_test.go#TestPlatformOperationsScopeFiltersCursorAndRevocation
     - postgres/admin_test.go#TestAdminMigrationRetentionAndPageBound

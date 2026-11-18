@@ -9,7 +9,7 @@
     "/api/v1/platform/admin/role-templates": {
       "get": {
         "operationId": "listAdminRoleTemplates",
-        "description": "六种初始模板仅提供建议能力；不自动授权，不包含敏感能力。",
+        "description": "六种初始模板仅提供建议能力，包含稳定国际化翻译键 label_key；不自动授权，不包含敏感能力。",
         "security": [
           {
             "session": []
@@ -899,13 +899,19 @@
             "minLength": 1,
             "maxLength": 128
           },
+          "label_key": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "内置角色模板的国际化翻译键（如 platform.admin.role_template.platform）；自定义角色省略此字段。"
+          },
           "capabilities": {
             "type": "array",
             "items": {
               "type": "string",
               "minLength": 1,
               "maxLength": 128,
-              "pattern": "^[a-z][a-z0-9._-]*$"
+              "pattern": "^[a-z][a-z0-9._-]*$",
+              "description": "分段式能力标识 ^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9_-]*)+$，禁止缺少、连续或尾随点号。"
             },
             "minItems": 1,
             "maxItems": 64,
