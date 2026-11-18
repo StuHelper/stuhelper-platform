@@ -12,9 +12,17 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
+type pendingAuditSnapshot struct {
+	slot       *int
+	token      string
+	visibility string
+	epoch      int64
+}
+
 type adminStore struct {
-	tx        *sql.Tx
-	snapshots *sql.DB
+	tx               *sql.Tx
+	repo             *Repository
+	pendingSnapshots []pendingAuditSnapshot
 }
 
 func adminError(e error) error {
@@ -49,10 +57,30 @@ func (r *Repository) adminTransaction(ctx context.Context, write bool, fn func(a
 			return adminError(e)
 		}
 	}
-	if e = fn(adminStore{tx: tx, snapshots: r.DB}); e != nil {
+	store := &adminStore{tx: tx, repo: r}
+	if e = fn(store); e != nil {
 		return adminError(e)
 	}
-	return adminError(tx.Commit())
+	if e = tx.Commit(); e != nil {
+		return adminError(e)
+	}
+	// Persist visibility snapshots only after the read-only transaction commits and
+	// releases its connection back to r.DB, preventing connection-pool self-deadlock.
+	for _, snap := range store.pendingSnapshots {
+		if snap.slot != nil {
+			_, e = r.DB.ExecContext(ctx, `INSERT INTO platform.audit_snapshots(slot,token,visibility,epoch,created_at)
+ VALUES ($1,$2,$3::pg_snapshot,$4,clock_timestamp())
+ ON CONFLICT(slot) DO UPDATE SET token=EXCLUDED.token,visibility=EXCLUDED.visibility,epoch=EXCLUDED.epoch,created_at=EXCLUDED.created_at`, *snap.slot, snap.token, snap.visibility, snap.epoch)
+		} else {
+			_, e = r.DB.ExecContext(ctx, `INSERT INTO platform.audit_snapshots(slot,token,visibility,epoch,created_at)
+ VALUES ((nextval('platform.audit_snapshot_slot') % 4096)::integer,$1,$2::pg_snapshot,$3,clock_timestamp())
+ ON CONFLICT(slot) DO UPDATE SET token=EXCLUDED.token,visibility=EXCLUDED.visibility,epoch=EXCLUDED.epoch,created_at=EXCLUDED.created_at`, snap.token, snap.visibility, snap.epoch)
+		}
+		if e != nil {
+			return adminError(e)
+		}
+	}
+	return nil
 }
 func (r *Repository) View(ctx context.Context, fn func(a.Store) error) error {
 	return r.adminTransaction(ctx, false, fn)
@@ -60,7 +88,7 @@ func (r *Repository) View(ctx context.Context, fn func(a.Store) error) error {
 func (r *Repository) Write(ctx context.Context, fn func(a.Store) error) error {
 	return r.adminTransaction(ctx, true, fn)
 }
-func (s adminStore) Role(ctx context.Context, id string) (out a.Role, err error) {
+func (s *adminStore) Role(ctx context.Context, id string) (out a.Role, err error) {
 	var raw []byte
 	err = s.tx.QueryRowContext(ctx, `SELECT definition FROM platform.admin_roles WHERE id=$1`, id).Scan(&raw)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -74,7 +102,7 @@ func (s adminStore) Role(ctx context.Context, id string) (out a.Role, err error)
 	}
 	return
 }
-func (s adminStore) Effective(ctx context.Context, subject string) (a.Effective, error) {
+func (s *adminStore) Effective(ctx context.Context, subject string) (a.Effective, error) {
 	out := a.Effective{Subject: subject, Revision: "0", Grants: []a.Grant{}, AuthorizationMode: a.ExplicitGrants}
 	var revision int64
 	e := s.tx.QueryRowContext(ctx, `SELECT revision FROM platform.admin_subjects WHERE subject=$1`, subject).Scan(&revision)
@@ -103,7 +131,7 @@ func (s adminStore) Effective(ctx context.Context, subject string) (a.Effective,
 	}
 	return out, adminError(rows.Err())
 }
-func (s adminStore) CreateRole(ctx context.Context, r a.Role) error {
+func (s *adminStore) CreateRole(ctx context.Context, r a.Role) error {
 	var count int
 	if e := s.tx.QueryRowContext(ctx, `SELECT count(*) FROM platform.admin_roles`).Scan(&count); e != nil {
 		return adminError(e)
@@ -115,7 +143,7 @@ func (s adminStore) CreateRole(ctx context.Context, r a.Role) error {
 	_, e := s.tx.ExecContext(ctx, `INSERT INTO platform.admin_roles(id,definition) VALUES($1,$2)`, r.ID, b)
 	return adminError(e)
 }
-func (s adminStore) Change(ctx context.Context, subject string, m a.Mutation, revoke bool) (a.Revision, error) {
+func (s *adminStore) Change(ctx context.Context, subject string, m a.Mutation, revoke bool) (a.Revision, error) {
 	out := a.Revision{}
 	if _, e := s.tx.ExecContext(ctx, `INSERT INTO platform.admin_subjects(subject) VALUES($1) ON CONFLICT DO NOTHING`, subject); e != nil {
 		return out, adminError(e)
@@ -156,12 +184,12 @@ func (s adminStore) Change(ctx context.Context, subject string, m a.Mutation, re
 	out.Revision = strconv.FormatInt(revision, 10)
 	return out, nil
 }
-func (s adminStore) Record(ctx context.Context, r a.Record) error {
+func (s *adminStore) Record(ctx context.Context, r a.Record) error {
 	raw, _ := json.Marshal(r)
 	_, e := s.tx.ExecContext(ctx, `INSERT INTO platform.audit(actor,action,target,data,created_at,school,group_id,module,reason,result) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, r.Actor, r.Action, r.Target, raw, r.CreatedAt, r.Scope.School, r.Scope.Group, r.Scope.Module, r.Reason, r.Result)
 	return adminError(e)
 }
-func (s adminStore) Replay(ctx context.Context, actor, key, hash string) ([]byte, error) {
+func (s *adminStore) Replay(ctx context.Context, actor, key, hash string) ([]byte, error) {
 	var previous string
 	var b []byte
 	e := s.tx.QueryRowContext(ctx, `SELECT digest,result FROM platform.admin_requests WHERE actor=$1 AND key=$2`, actor, key).Scan(&previous, &b)
@@ -176,7 +204,7 @@ func (s adminStore) Replay(ctx context.Context, actor, key, hash string) ([]byte
 	}
 	return b, nil
 }
-func (s adminStore) SaveReplay(ctx context.Context, actor, key, hash string, b []byte, at time.Time) error {
+func (s *adminStore) SaveReplay(ctx context.Context, actor, key, hash string, b []byte, at time.Time) error {
 	_, e := s.tx.ExecContext(ctx, `INSERT INTO platform.admin_requests(actor,key,digest,result,created_at) VALUES($1,$2,$3,$4,$5)`, actor, key, hash, b, at)
 	return adminError(e)
 }

@@ -7,13 +7,36 @@ import (
 	_ "embed"
 	"errors"
 	e "github.com/StuHelper/stuhelper-platform/eligibility"
+	"hash/fnv"
+	"sync"
 	"time"
 )
 
 //go:embed schema.sql
 var Schema string
 
-type Repository struct{ DB *sql.DB }
+type Repository struct {
+	DB              *sql.DB
+	snapshotMu      sync.Mutex
+	actorSlotOffset map[string]uint32
+}
+
+func (r *Repository) nextActorSnapshotSlot(actor string) int {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(actor))
+	bucket := int(h.Sum32() % 64)
+	r.snapshotMu.Lock()
+	defer r.snapshotMu.Unlock()
+	if r.actorSlotOffset == nil {
+		r.actorSlotOffset = map[string]uint32{}
+	}
+	offset, exists := r.actorSlotOffset[actor]
+	if !exists && len(r.actorSlotOffset) >= 4096 {
+		r.actorSlotOffset = map[string]uint32{}
+	}
+	r.actorSlotOffset[actor] = offset + 1
+	return bucket*64 + int(offset%64)
+}
 
 func Migrate(ctx context.Context, db *sql.DB) error {
 	tx, err := db.BeginTx(ctx, nil)
