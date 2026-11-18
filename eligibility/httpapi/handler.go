@@ -19,7 +19,8 @@ type Handler struct {
 
 func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	fail := func(err error) {
 		code, status := "unavailable", 503
 		switch {
@@ -44,14 +45,26 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fail(err)
 		return
 	}
+	switch r.Method {
+	case "GET", "HEAD", "PUT":
+	default:
+		w.Header().Set("Allow", "GET, HEAD, PUT")
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		_ = json.NewEncoder(w).Encode(map[string]string{"code": "method_not_allowed"})
+		return
+	}
 	school, action := r.PathValue("school"), r.PathValue("action")
+	if !e.ValidSchool(school) || !e.ValidAction(action) {
+		fail(e.ErrRule)
+		return
+	}
 	if err = h.Authorize(r.Context(), actor, school); err != nil {
 		fail(err)
 		return
 	}
 	var result e.Rule
 	switch r.Method {
-	case "GET":
+	case "GET", "HEAD":
 		result, err = h.Service.Get(r.Context(), school, action)
 	case "PUT":
 		var in e.Change
@@ -62,12 +75,13 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		result, err = h.Service.Set(r.Context(), actor, r.Header.Get("Idempotency-Key"), school, action, in)
-	default:
-		w.WriteHeader(405)
-		return
 	}
 	if err != nil {
 		fail(err)
+		return
+	}
+	if r.Method == "HEAD" {
+		w.WriteHeader(http.StatusOK)
 		return
 	}
 	_ = json.NewEncoder(w).Encode(result)

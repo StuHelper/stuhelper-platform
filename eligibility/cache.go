@@ -26,7 +26,13 @@ func (c *CachedRules) now() time.Time {
 	}
 	return time.Now()
 }
-func copyRule(r Rule) Rule { r.Conditions = append([]Condition{}, r.Conditions...); return r }
+func copyRule(r Rule) Rule {
+	r.Conditions = append([]Condition{}, r.Conditions...)
+	if r.SupportedConditions != nil {
+		r.SupportedConditions = append([]Condition{}, r.SupportedConditions...)
+	}
+	return r
+}
 func (c *CachedRules) Invalidate() {
 	c.mu.Lock()
 	defer c.mu.Unlock()

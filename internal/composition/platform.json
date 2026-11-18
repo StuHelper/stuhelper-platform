@@ -14,6 +14,9 @@
     "scenario_tests": {
       "PLAT-CONFIG-01": [
         "postgres/integration_test.go#TestConfigurationConcurrencyReplayRollbackAndRetention",
+        "postgres/integration_test.go#TestEligibilityActionWhitelistAndMalformedInputsNeverReturn503",
+        "eligibility/admission_test.go#TestAdmissionFailsClosedWhenRulesUnwiredAndPreservesServedSchoolScope",
+        "eligibility/httpapi/handler_test.go#TestEligibilityHTTPActionWhitelistValidationAndProtocolHeaders",
         "eligibility/cache_test.go#TestRuleCacheExpiryInvalidationAndFailure",
         "eligibility/cache_test.go#TestRuleCacheDoesNotReinsertInvalidatedInFlightRead"
       ],
@@ -39,6 +42,11 @@
       ],
       "PLAT-AUDIT-01": [
         "postgres/audit_test.go#TestPlatformAuditSnapshotExpiryEvictionAndTokenFormat",
+        "postgres/audit_test.go#TestPlatformAuditSingleConnectionPoolDoesNotDeadlock",
+        "postgres/audit_test.go#TestPlatformOperationsFutureFromAndDisjointModuleSources",
+        "postgres/audit_test.go#TestPlatformAuditCursorVariantsAndIndexOrder",
+        "postgres/audit_test.go#TestPlatformAuditSnapshotActorBucketIsolation",
+        "postgres/audit_test.go#TestPlatformAuditCursorSurvivesAnotherRepository",
         "postgres/audit_test.go#TestPlatformAuditManyPendingTransactions",
         "postgres/audit_test.go#TestAuditProvidersStableMergeAndSnapshot",
         "postgres/audit_test.go#TestAuditProvidersAuthorizationBeforeReadAndRevokedPage",

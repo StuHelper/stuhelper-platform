@@ -7,8 +7,31 @@ type Rules interface {
 }
 type Defaults struct{}
 
+// SupportedConditions returns the explicit condition whitelist for an action.
+// Only publish_course has a course enrollment context; other actions reject
+// course_enrollment so misconfiguration cannot trigger runtime 503 failures.
+func SupportedConditions(action string) ([]Condition, error) {
+	switch action {
+	case "publish_course":
+		return []Condition{Content, Campus, Phone, Identity, Enrollment}, nil
+	case "content.enter", "read_full", "vote", "bookmark", "report", "resources.discover", "resources.download.public", "resources.download.restricted", "resources.purchase", "membership.purchase", "publish_mentor", "reply", "resources.upload", "reply_teacher":
+		return []Condition{Content, Campus, Phone, Identity}, nil
+	default:
+		return nil, ErrRule
+	}
+}
+
+func ValidAction(action string) bool {
+	_, err := SupportedConditions(action)
+	return err == nil
+}
+
 func (Defaults) Effective(_ context.Context, action, _ string) (Rule, error) {
-	rule := Rule{Version: "initial-20261108", Conditions: []Condition{}}
+	supported, err := SupportedConditions(action)
+	if err != nil {
+		return Rule{}, ErrRule
+	}
+	rule := Rule{Version: "initial-20261108", Conditions: []Condition{}, SupportedConditions: supported}
 	switch action {
 	case "content.enter", "read_full", "vote", "bookmark", "report", "resources.discover", "resources.download.public", "resources.download.restricted":
 		rule.Conditions = []Condition{Content}
