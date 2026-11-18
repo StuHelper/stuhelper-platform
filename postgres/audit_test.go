@@ -7,12 +7,14 @@ import (
 	"fmt"
 	"github.com/StuHelper/stuhelper-platform/account"
 	ah "github.com/StuHelper/stuhelper-platform/admin/httpapi"
+	p "github.com/StuHelper/stuhelper-platform/postgres"
 	sdk "github.com/StuHelper/stuhelper-platform/sdk/admin"
 	"net/http"
 	"net/http/httptest"
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -404,5 +406,206 @@ func TestPlatformAuditSnapshotExpiryEvictionAndTokenFormat(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestPlatformAuditSingleConnectionPoolDoesNotDeadlock(t *testing.T) {
+	s, repo := service(t)
+	now := time.Now().UTC()
+	for i := range 3 {
+		if _, err := repo.DB.Exec(`INSERT INTO platform.audit(actor,action,target,data,created_at) VALUES('synthetic','pool',$1,'{}',$2)`, fmt.Sprint(i), now.Add(-time.Duration(i+1)*time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	repo.DB.SetMaxOpenConns(1)
+	repo.DB.SetMaxIdleConns(1)
+	page, err := s.Operations(ctx, boss, a.Filter{Scope: a.Global, Action: "pool", Limit: 1})
+	if err != nil || page.Partial || len(page.Items) != 1 || page.NextCursor == "" {
+		t.Fatalf("MaxOpenConns=1 deadlocked or failed: page=%+v err=%v", page, err)
+	}
+	page2, err := s.Operations(ctx, boss, a.Filter{Scope: a.Global, Action: "pool", Limit: 1, Cursor: page.NextCursor})
+	if err != nil || page2.Partial || len(page2.Items) != 1 {
+		t.Fatalf("second page failed: page=%+v err=%v", page2, err)
+	}
+
+	repo.DB.SetMaxOpenConns(2)
+	repo.DB.SetMaxIdleConns(2)
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Go(func() {
+			p, e := s.Operations(ctx, boss, a.Filter{Scope: a.Global, Action: "pool", Limit: 2})
+			if e != nil || p.Partial || len(p.Items) != 2 {
+				t.Errorf("concurrent Operations failed under MaxOpenConns=2: %+v %v", p, e)
+			}
+		})
+	}
+	wg.Wait()
+}
+
+type strictRangeProvider struct {
+	auditProvider
+}
+
+func (p *strictRangeProvider) ReadAudit(ctx context.Context, q a.AuditRequest) (a.AuditBatch, error) {
+	if !q.From.IsZero() && q.From.After(q.Until) {
+		return a.AuditBatch{}, errors.New("inverted time range")
+	}
+	return p.auditProvider.ReadAudit(ctx, q)
+}
+
+func TestPlatformOperationsFutureFromAndDisjointModuleSources(t *testing.T) {
+	s, repo := service(t)
+	now := time.Now().UTC()
+	s.Now = func() time.Time { return now }
+	if _, err := repo.DB.Exec(`INSERT INTO platform.audit(actor,action,target,data,created_at,school,module) VALUES('synthetic','grant','obj','{}',$1,'a','resources')`, now.Add(-time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	v := &strictRangeProvider{auditProvider: auditProvider{rows: []a.Record{auditRow("verification", "v1", "a", now.Add(-time.Minute))}}}
+	s.AuditProviders = map[string]a.AuditProvider{"verification": v}
+
+	// A-13 (1): From > now should return an empty non-partial page without sending From > Until to providers.
+	futurePage, err := s.Operations(ctx, boss, a.Filter{Scope: a.Global, From: now.Add(2 * time.Second), Limit: 10})
+	if err != nil || futurePage.Partial || len(futurePage.Items) != 0 || len(v.calls) != 0 {
+		t.Fatalf("future From caused provider error or call: page=%+v err=%v calls=%d", futurePage, err, len(v.calls))
+	}
+
+	// A-13 (2): Platform admin filtering module=resources with sources=platform,verification must succeed (200) and return matching platform rows.
+	disjointFilter := a.Filter{
+		Scope:   a.Scope{School: "a", Group: "*", Module: "resources"},
+		Sources: []string{"platform", "verification"},
+		Limit:   10,
+	}
+	page, err := s.Operations(ctx, boss, disjointFilter)
+	if err != nil || page.Partial || len(page.Items) != 1 || page.Items[0].Source != "platform" {
+		t.Fatalf("platform admin disjoint module+sources failed: page=%+v err=%v", page, err)
+	}
+
+	// Unauthorized scoped admin explicitly selecting verification must still receive ErrForbidden.
+	role(t, s, "res-audit", "platform.audit.read")
+	grant(t, s, delegate, "res-audit", "0", a.Scope{School: "a", Group: "*", Module: "resources"})
+	_, err = s.Operations(ctx, delegate, disjointFilter)
+	deny(t, err)
+}
+
+func TestPlatformAuditCursorVariantsAndIndexOrder(t *testing.T) {
+	_, repo := service(t)
+	owner := repo.DB
+	t1 := time.Date(2026, 11, 10, 12, 0, 0, 0, time.UTC)
+	t2 := t1.Add(-time.Second)
+	for _, ts := range []time.Time{t1, t1, t2} {
+		if _, err := owner.Exec(`INSERT INTO platform.audit(actor,action,target,data,created_at,school,module) VALUES('actor-1','act-1','tgt-1','{}',$1,'buaa','platform')`, ts); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var all a.AuditBatch
+	if err := repo.View(ctx, func(st a.Store) error {
+		var e error
+		all, e = st.ReadAudit(ctx, a.AuditRequest{Scopes: []a.Scope{a.Global}, Until: t1.Add(time.Second), Limit: 10})
+		return e
+	}); err != nil || len(all.Records) != 3 {
+		t.Fatalf("initial ReadAudit: %+v %v", all, err)
+	}
+
+	// Source > "platform" (e.g. "verification") at t1: platform rows at t1 sort AFTER (t1,"verification",...), so both t1 rows must be included!
+	var afterVerif a.AuditBatch
+	if err := repo.View(ctx, func(st a.Store) error {
+		var e error
+		afterVerif, e = st.ReadAudit(ctx, a.AuditRequest{
+			Scopes: []a.Scope{a.Global}, Until: t1.Add(time.Second), Snapshot: all.Snapshot, Limit: 10,
+			Before: &a.AuditPosition{Time: t1, Source: "verification", ID: "0"},
+		})
+		return e
+	}); err != nil || len(afterVerif.Records) != 3 {
+		t.Fatalf("Before verification@t1 expected 3 rows, got %d (%v)", len(afterVerif.Records), err)
+	}
+
+	// Source < "platform" (e.g. "billing") at t1: platform rows at t1 sort BEFORE (t1,"billing",...), so only t2 row must remain!
+	var afterBilling a.AuditBatch
+	if err := repo.View(ctx, func(st a.Store) error {
+		var e error
+		afterBilling, e = st.ReadAudit(ctx, a.AuditRequest{
+			Scopes: []a.Scope{a.Global}, Until: t1.Add(time.Second), Snapshot: all.Snapshot, Limit: 10,
+			Before: &a.AuditPosition{Time: t1, Source: "billing", ID: "zzzz"},
+		})
+		return e
+	}); err != nil || len(afterBilling.Records) != 1 || !afterBilling.Records[0].CreatedAt.Equal(t2) {
+		t.Fatalf("Before billing@t1 expected 1 row at t2, got %+v (%v)", afterBilling.Records, err)
+	}
+
+	// Source == "platform" at t1 with first t1 ID: only second t1 row and t2 row remain.
+	var afterFirstPlatform a.AuditBatch
+	if err := repo.View(ctx, func(st a.Store) error {
+		var e error
+		afterFirstPlatform, e = st.ReadAudit(ctx, a.AuditRequest{
+			Scopes: []a.Scope{a.Global}, Until: t1.Add(time.Second), Snapshot: all.Snapshot, Limit: 10,
+			Before: &a.AuditPosition{Time: t1, Source: "platform", ID: all.Records[0].ID},
+		})
+		return e
+	}); err != nil || len(afterFirstPlatform.Records) != 2 || afterFirstPlatform.Records[0].ID != all.Records[1].ID {
+		t.Fatalf("Before platform@t1[0] expected 2 rows starting with %s, got %+v (%v)", all.Records[1].ID, afterFirstPlatform.Records, err)
+	}
+
+	// Verify composite merge indexes exist in schema.
+	var indexCount int
+	if err := repo.DB.QueryRow(`SELECT count(*) FROM pg_indexes WHERE schemaname='platform' AND indexname IN ('platform_audit_merge','platform_audit_scope_merge','platform_audit_actor_merge','platform_audit_target_merge','platform_audit_action_merge')`).Scan(&indexCount); err != nil || indexCount != 5 {
+		t.Fatalf("expected 5 aligned merge indexes on platform.audit, got %d (%v)", indexCount, err)
+	}
+}
+
+func TestPlatformAuditSnapshotActorBucketIsolation(t *testing.T) {
+	s, repo := service(t)
+	now := time.Now().UTC()
+	for i := range 3 {
+		if _, err := repo.DB.Exec(`INSERT INTO platform.audit(actor,action,target,data,created_at,school,module) VALUES('synthetic','iso',$1,'{}',$2,'school-a','resources')`, fmt.Sprint(i), now.Add(-time.Duration(i+1)*time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	role(t, s, "iso-audit", "platform.audit.read")
+	noisy := account.Principal{Issuer: "urn:test", Subject: "noisy-operator-bucket-check"}
+	grant(t, s, noisy, "iso-audit", "0", school)
+
+	first, err := s.Operations(ctx, boss, a.Filter{Scope: a.Global, Action: "iso", Limit: 1})
+	if err != nil || first.Partial || first.NextCursor == "" {
+		t.Fatalf("boss page 1 failed: %+v %v", first, err)
+	}
+
+	// Another admin floods >4096 first-page snapshot creations.
+	for range 4100 {
+		if _, err := s.Operations(ctx, noisy, a.Filter{Scope: school, Action: "iso", Limit: 10}); err != nil {
+			t.Fatalf("noisy Operations failed: %v", err)
+		}
+	}
+
+	// boss's active pagination cursor must not have been evicted by noisy's flood.
+	second, err := s.Operations(ctx, boss, a.Filter{Scope: a.Global, Action: "iso", Limit: 1, Cursor: first.NextCursor})
+	if err != nil || second.Partial || len(second.Items) != 1 {
+		t.Fatalf("boss snapshot was evicted by another operator's flood: page=%+v err=%v", second, err)
+	}
+}
+
+func TestPlatformAuditCursorSurvivesAnotherRepository(t *testing.T) {
+	firstService, repo := service(t)
+	secondService := a.Service{Repo: &p.Repository{DB: repo.DB}, Identity: firstService.Identity}
+	now := time.Now().UTC()
+	for i := range 3 {
+		if _, err := repo.DB.Exec(`INSERT INTO platform.audit(actor,action,target,data,created_at,school,module) VALUES('synthetic','multi',$1,'{}',$2,'school-a','resources')`, fmt.Sprint(i), now.Add(-time.Duration(i+1)*time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	filter := a.Filter{Scope: a.Global, Action: "multi", Limit: 1}
+	var cursors []string
+	for _, service := range []*a.Service{&firstService, &secondService} {
+		page, err := service.Operations(ctx, boss, filter)
+		if err != nil || page.Partial || page.NextCursor == "" {
+			t.Fatalf("first page: %+v %v", page, err)
+		}
+		cursors = append(cursors, page.NextCursor)
+	}
+	for _, cursor := range cursors {
+		filter.Cursor = cursor
+		page, err := secondService.Operations(ctx, boss, filter)
+		if err != nil || page.Partial || len(page.Items) != 1 || page.Items[0].Target != "1" {
+			t.Fatalf("continuation: %+v %v", page, err)
+		}
 	}
 }

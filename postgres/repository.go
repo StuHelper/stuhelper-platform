@@ -13,7 +13,9 @@ import (
 //go:embed schema.sql
 var Schema string
 
-type Repository struct{ DB *sql.DB }
+type Repository struct {
+	DB *sql.DB
+}
 
 func Migrate(ctx context.Context, db *sql.DB) error {
 	tx, err := db.BeginTx(ctx, nil)
