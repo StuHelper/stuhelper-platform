@@ -127,6 +127,39 @@ func (e Condition) Valid() bool {
 	}
 }
 
+// Defines values for ErrorCode.
+const (
+	Conflict         ErrorCode = "conflict"
+	Forbidden        ErrorCode = "forbidden"
+	InvalidRequest   ErrorCode = "invalid_request"
+	InvalidRule      ErrorCode = "invalid_rule"
+	MethodNotAllowed ErrorCode = "method_not_allowed"
+	Unauthenticated  ErrorCode = "unauthenticated"
+	Unavailable      ErrorCode = "unavailable"
+)
+
+// Valid indicates whether the value is a known member of the ErrorCode enum.
+func (e ErrorCode) Valid() bool {
+	switch e {
+	case Conflict:
+		return true
+	case Forbidden:
+		return true
+	case InvalidRequest:
+		return true
+	case InvalidRule:
+		return true
+	case MethodNotAllowed:
+		return true
+	case Unauthenticated:
+		return true
+	case Unavailable:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for RuleConditions.
 const (
 	RuleConditionsCampusEligibility RuleConditions = "campus_eligibility"
@@ -241,9 +274,15 @@ type EligibilityEvaluationBatch struct {
 
 // Error defines model for Error.
 type Error struct {
-	Code       string                 `json:"code"`
+	Code       ErrorCode              `json:"code"`
 	Evaluation *EligibilityEvaluation `json:"evaluation,omitempty"`
+
+	// RequestId 请求追踪标识，与响应头 X-Request-ID 一致。
+	RequestId *string `json:"request_id,omitempty"`
 }
+
+// ErrorCode defines model for Error.Code.
+type ErrorCode string
 
 // Reset defines model for Reset.
 type Reset struct {

@@ -245,6 +245,8 @@ export interface components {
         AdminError: {
             /** @enum {string} */
             code: "invalid_request" | "unauthenticated" | "forbidden" | "conflict" | "not_found" | "unavailable";
+            /** @description 请求追踪标识，与响应头 X-Request-ID 一致。 */
+            request_id?: string;
         };
         AdminRolePage: {
             items: components["schemas"]["AdminRole"][];

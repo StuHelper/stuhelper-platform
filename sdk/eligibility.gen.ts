@@ -75,7 +75,10 @@ export interface components {
             reason?: string;
         };
         Error: {
-            code: string;
+            /** @enum {string} */
+            code: "invalid_request" | "invalid_rule" | "unauthenticated" | "forbidden" | "conflict" | "method_not_allowed" | "unavailable";
+            /** @description 请求追踪标识，与响应头 X-Request-ID 一致。 */
+            request_id?: string;
             evaluation?: components["schemas"]["EligibilityEvaluation"];
         };
         /**

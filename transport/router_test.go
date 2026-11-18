@@ -208,3 +208,35 @@ func TestPublicRouteOptionalSourceLimiter(t *testing.T) {
 		}
 	}
 }
+
+func TestUnknownAPIRouteAndMethodMismatchReturnJSONProblem(t *testing.T) {
+	route := Route{Method: "GET", Path: "/api/v1/example", Module: "example", Capability: "example.read", Access: Public, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		JSON(w, 200, map[string]bool{"ok": true})
+	})}
+	h, err := NewHandler(registry(t, true), []Route{route}, nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Unknown /api/v1/* path returns JSON 404 not_found with matching X-Request-ID.
+	w404 := httptest.NewRecorder()
+	h.ServeHTTP(w404, httptest.NewRequest("GET", "/api/v1/unknown-endpoint", nil))
+	if w404.Code != 404 || !strings.HasPrefix(w404.Header().Get("Content-Type"), "application/json") {
+		t.Fatalf("expected JSON 404, got %d (%s): %s", w404.Code, w404.Header().Get("Content-Type"), w404.Body.String())
+	}
+	reqID404 := w404.Header().Get("X-Request-ID")
+	if len(reqID404) != 32 || !strings.Contains(w404.Body.String(), `"code":"not_found"`) || !strings.Contains(w404.Body.String(), `"request_id":"`+reqID404+`"`) {
+		t.Fatalf("unexpected 404 body: %s (X-Request-ID=%s)", w404.Body.String(), reqID404)
+	}
+
+	// Unmatched method on known /api/v1/* path returns JSON 405 method_not_allowed with Allow header.
+	w405 := httptest.NewRecorder()
+	h.ServeHTTP(w405, httptest.NewRequest("POST", "/api/v1/example", strings.NewReader(`{}`)))
+	if w405.Code != 405 || w405.Header().Get("Allow") != "GET" {
+		t.Fatalf("expected 405 Allow=GET, got %d Allow=%q: %s", w405.Code, w405.Header().Get("Allow"), w405.Body.String())
+	}
+	reqID405 := w405.Header().Get("X-Request-ID")
+	if len(reqID405) != 32 || !strings.Contains(w405.Body.String(), `"code":"method_not_allowed"`) || !strings.Contains(w405.Body.String(), `"request_id":"`+reqID405+`"`) {
+		t.Fatalf("unexpected 405 body: %s (X-Request-ID=%s)", w405.Body.String(), reqID405)
+	}
+}

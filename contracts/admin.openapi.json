@@ -1610,6 +1610,10 @@
               "not_found",
               "unavailable"
             ]
+          },
+          "request_id": {
+            "type": "string",
+            "description": "请求追踪标识，与响应头 X-Request-ID 一致。"
           }
         },
         "required": [

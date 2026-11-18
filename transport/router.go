@@ -28,12 +28,7 @@ var (
 	ErrUnavailable     = errors.New("authorization unavailable")
 )
 
-type Principal struct{ Issuer, Subject string }
-
-func (p Principal) Valid() bool {
-	return (account.Principal{Issuer: p.Issuer, Subject: p.Subject}).Valid()
-}
-
+type Principal = account.Principal
 type Resource struct{ Type, ID string }
 type Authenticator interface {
 	Authenticate(*http.Request) (Principal, error)
@@ -58,6 +53,20 @@ type Route struct {
 	Handler                          http.Handler
 }
 
+type unavailableHandler struct {
+	http.Handler
+	code string
+}
+
+// WithUnavailableCode preserves the handler's published 503 error code when
+// module readiness prevents the router from calling the handler.
+func WithUnavailableCode(handler http.Handler, code string) http.Handler {
+	if handler == nil || code == "" {
+		return handler
+	}
+	return unavailableHandler{Handler: handler, code: code}
+}
+
 type Error = gen.Problem
 type contextKey struct{}
 type principalKey struct{}
@@ -71,6 +80,24 @@ func Identity(ctx context.Context) (Principal, bool) {
 func RequestID(ctx context.Context) string {
 	value, _ := ctx.Value(contextKey{}).(string)
 	return value
+}
+
+// EnsureRequestID reuses the active context request ID or generates a new one,
+// ensuring X-Request-ID and X-Content-Type-Options headers are present.
+func EnsureRequestID(w http.ResponseWriter, r *http.Request) (*http.Request, string, error) {
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	if id := RequestID(r.Context()); id != "" {
+		w.Header().Set("X-Request-ID", id)
+		return r, id, nil
+	}
+	var raw [16]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return r, "", err
+	}
+	id := hex.EncodeToString(raw[:])
+	r = r.WithContext(context.WithValue(r.Context(), contextKey{}, id))
+	w.Header().Set("X-Request-ID", id)
+	return r, id, nil
 }
 
 func JSON(w http.ResponseWriter, status int, value any) {
@@ -120,6 +147,10 @@ func NewHandler(registry *module.Registry, routes []Route, authn Authenticator, 
 		if route.Access != Public && route.Access != Protected {
 			return nil, errors.New("route access must be explicit")
 		}
+		unavailableCode := "module_unavailable"
+		if h, ok := route.Handler.(unavailableHandler); ok {
+			unavailableCode = h.code
+		}
 		mux.Handle(route.Method+" "+route.Path, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if route.Limiter != nil && !route.Limiter.Allow(requestSource(r, route.Source)) {
 				problem(w, r, http.StatusTooManyRequests, "rate_limited")
@@ -129,7 +160,7 @@ func NewHandler(registry *module.Registry, routes []Route, authn Authenticator, 
 			available := registry.CapabilityAvailable(ctx, route.Module, route.Capability)
 			cancel()
 			if !available {
-				problem(w, r, 503, "module_unavailable")
+				problem(w, r, 503, unavailableCode)
 				return
 			}
 			if route.Access == Protected {
@@ -197,16 +228,14 @@ func NewHandler(registry *module.Registry, routes []Route, authn Authenticator, 
 				return func(source io.Reader) (int64, error) { started = true; return next(source) }
 			},
 		})
-		var raw [16]byte
-		if _, err := rand.Read(raw[:]); err != nil {
+		var err error
+		var id string
+		r, id, err = EnsureRequestID(w, r)
+		if err != nil {
 			http.Error(w, "request unavailable", 503)
 			return
 		}
-		id := hex.EncodeToString(raw[:])
-		ctx := module.WithAvailabilityCache(context.WithValue(r.Context(), contextKey{}, id))
-		r = r.WithContext(ctx)
-		w.Header().Set("X-Request-ID", id)
-		w.Header().Set("X-Content-Type-Options", "nosniff")
+		r = r.WithContext(module.WithAvailabilityCache(r.Context()))
 		defer func() {
 			if recovered := recover(); recovered != nil {
 				if recovered == http.ErrAbortHandler {
@@ -220,6 +249,25 @@ func NewHandler(registry *module.Registry, routes []Route, authn Authenticator, 
 			}
 		}()
 		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+		if strings.HasPrefix(r.URL.Path, "/api/v1/") {
+			if _, pattern := mux.Handler(r); pattern == "" {
+				var allowed []string
+				for _, m := range []string{"GET", "POST", "PUT", "PATCH", "DELETE"} {
+					probe := *r
+					probe.Method = m
+					if _, p := mux.Handler(&probe); p != "" {
+						allowed = append(allowed, m)
+					}
+				}
+				if len(allowed) > 0 {
+					w.Header().Set("Allow", strings.Join(allowed, ", "))
+					problem(w, r, 405, "method_not_allowed")
+					return
+				}
+				problem(w, r, 404, "not_found")
+				return
+			}
+		}
 		mux.ServeHTTP(w, r)
 	}), nil
 }
