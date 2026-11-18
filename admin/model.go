@@ -58,9 +58,30 @@ func (s Scope) Intersection(t Scope) (Scope, bool) {
 }
 
 type Role struct {
-	ID           string   `json:"id"`
-	Name         string   `json:"name"`
-	Capabilities []string `json:"capabilities"`
+	CreatedAt    *time.Time `json:"created_at,omitempty"`
+	ID           string     `json:"id"`
+	Name         string     `json:"name"`
+	Capabilities []string   `json:"capabilities"`
+}
+type RolePage struct {
+	Items      []Role `json:"items"`
+	NextCursor string `json:"next_cursor"`
+}
+type RoleFilter struct {
+	Keyword    string
+	Capability string
+	Cursor     string
+	Limit      int
+}
+type RolePosition struct {
+	CreatedAt time.Time `json:"created_at"`
+	ID        string    `json:"id"`
+}
+type RoleQuery struct {
+	Before     *RolePosition
+	Keyword    string
+	Capability string
+	Limit      int
 }
 type RoleInput struct {
 	Role   Role   `json:"role"`
@@ -69,6 +90,72 @@ type RoleInput struct {
 type Grant struct {
 	Role  Role  `json:"role"`
 	Scope Scope `json:"scope"`
+}
+type GrantTarget struct {
+	RoleID string `json:"role_id"`
+	Scope  Scope  `json:"scope"`
+}
+type GrantChangesInput struct {
+	Add              []GrantTarget `json:"add"`
+	Revoke           []GrantTarget `json:"revoke"`
+	ExpectedRevision string        `json:"expected_revision"`
+	Reason           string        `json:"reason"`
+}
+type BatchItemStatus string
+
+const (
+	BatchReady     BatchItemStatus = "ready"
+	BatchSucceeded BatchItemStatus = "succeeded"
+	BatchConflict  BatchItemStatus = "conflict"
+	BatchForbidden BatchItemStatus = "forbidden"
+	BatchNotFound  BatchItemStatus = "not_found"
+)
+
+type BatchGrantChangeItem struct {
+	Subject          string        `json:"subject"`
+	ExpectedRevision string        `json:"expected_revision"`
+	Add              []GrantTarget `json:"add"`
+	Revoke           []GrantTarget `json:"revoke"`
+}
+type BatchGrantChangesInput struct {
+	DryRun bool                   `json:"dry_run"`
+	Reason string                 `json:"reason"`
+	Items  []BatchGrantChangeItem `json:"items"`
+}
+type BatchGrantChangeResultItem struct {
+	Subject         string          `json:"subject"`
+	Status          BatchItemStatus `json:"status"`
+	Revision        string          `json:"revision"`
+	CurrentRevision string          `json:"current_revision,omitempty"`
+	Adding          []Grant         `json:"adding"`
+	Revoking        []Grant         `json:"revoking"`
+}
+type BatchGrantChangesResult struct {
+	DryRun bool                         `json:"dry_run"`
+	Items  []BatchGrantChangeResultItem `json:"items"`
+}
+type AdministratorSummary struct {
+	Subject  string  `json:"subject"`
+	Revision string  `json:"revision"`
+	Grants   []Grant `json:"grants"`
+}
+type AdministratorPage struct {
+	Items      []AdministratorSummary `json:"items"`
+	NextCursor string                 `json:"next_cursor"`
+}
+type AdministratorFilter struct {
+	Scope      Scope
+	RoleID     string
+	Capability string
+	Cursor     string
+	Limit      int
+}
+type AdministratorQuery struct {
+	Scopes       []Scope
+	RoleID       string
+	Capability   string
+	AfterSubject string
+	Limit        int
 }
 type AuthorizationMode string
 
@@ -140,9 +227,12 @@ type Identity interface {
 }
 type Store interface {
 	Role(context.Context, string) (Role, error)
+	ListRoles(context.Context, RoleQuery) ([]Role, error)
 	Effective(context.Context, string) (Effective, error)
+	ListAdministrators(context.Context, AdministratorQuery) ([]AdministratorSummary, error)
 	CreateRole(context.Context, Role) error
 	Change(context.Context, string, Mutation, bool) (Revision, error)
+	ApplyGrantChanges(context.Context, string, string, []GrantTarget, []GrantTarget, string, string, time.Time) (Revision, error)
 	Record(context.Context, Record) error
 	Replay(context.Context, string, string, string) ([]byte, error)
 	SaveReplay(context.Context, string, string, string, []byte, time.Time) error
@@ -177,11 +267,11 @@ func validRole(r Role) bool {
 // Templates are suggestions only. Sensitive actions are never bundled into them.
 func Templates() []Role {
 	return []Role{
-		{"platform", "平台管理", []string{"platform.authorization.read", "platform.authorization.manage", "platform.audit.read"}},
-		{"school", "学校管理", []string{"catalog.maintain"}},
-		{"moderation", "内容审核", []string{"moderation.review"}},
-		{"resources", "资料管理", []string{"resources.manage"}},
-		{"groups", "群管理", []string{"groups.manage"}},
-		{"finance", "财务管理", []string{"billing.configuration.read"}},
+		{ID: "platform", Name: "平台管理", Capabilities: []string{"platform.authorization.read", "platform.authorization.manage", "platform.audit.read"}},
+		{ID: "school", Name: "学校管理", Capabilities: []string{"catalog.maintain"}},
+		{ID: "moderation", Name: "内容审核", Capabilities: []string{"moderation.review"}},
+		{ID: "resources", Name: "资料管理", Capabilities: []string{"resources.manage"}},
+		{ID: "groups", Name: "群管理", Capabilities: []string{"groups.manage"}},
+		{ID: "finance", Name: "财务管理", Capabilities: []string{"billing.configuration.read"}},
 	}
 }

@@ -2,6 +2,7 @@ package eligibility
 
 import (
 	"context"
+	"slices"
 	"sync"
 	"time"
 )
@@ -26,13 +27,25 @@ func (c *CachedRules) now() time.Time {
 	}
 	return time.Now()
 }
-func copyRule(r Rule) Rule { r.Conditions = append([]Condition{}, r.Conditions...); return r }
+
+func copyRule(r Rule) Rule {
+	r.Conditions = append([]Condition{}, r.Conditions...)
+	if r.GlobalConditions != nil {
+		r.GlobalConditions = slices.Clone(r.GlobalConditions)
+	}
+	if r.SupportedConditions != nil {
+		r.SupportedConditions = slices.Clone(r.SupportedConditions)
+	}
+	return r
+}
+
 func (c *CachedRules) Invalidate() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.epoch++
 	c.entries = nil
 }
+
 func (c *CachedRules) Effective(ctx context.Context, action, school string) (Rule, error) {
 	if err := ctx.Err(); err != nil {
 		return Rule{}, err
@@ -66,10 +79,45 @@ func (c *CachedRules) Effective(ctx context.Context, action, school string) (Rul
 	}
 	return r, nil
 }
+
+func (c *CachedRules) SchoolRules(ctx context.Context, school string) (Configuration, error) {
+	if err := ctx.Err(); err != nil {
+		return Configuration{}, err
+	}
+	if c.Repo == nil {
+		return Configuration{}, ErrUnavailable
+	}
+	if sr, ok := c.Repo.(SchoolRepository); ok {
+		return sr.SchoolRules(ctx, school)
+	}
+	out := Configuration{School: school, Rules: map[string]Rule{}}
+	for _, action := range Actions() {
+		r, err := c.Effective(ctx, action, school)
+		if err != nil {
+			return Configuration{}, err
+		}
+		out.Version = r.Version
+		out.Rules[action] = r
+	}
+	return out, nil
+}
+
 func (c *CachedRules) Apply(ctx context.Context, in Update) (Rule, error) {
 	defer c.Invalidate()
 	if c.Repo == nil {
 		return Rule{}, ErrUnavailable
 	}
 	return c.Repo.Apply(ctx, in)
+}
+
+func (c *CachedRules) Reset(ctx context.Context, in ResetUpdate) (Rule, error) {
+	defer c.Invalidate()
+	if c.Repo == nil {
+		return Rule{}, ErrUnavailable
+	}
+	rr, ok := c.Repo.(ResetRepository)
+	if !ok {
+		return Rule{}, ErrUnavailable
+	}
+	return rr.Reset(ctx, in)
 }

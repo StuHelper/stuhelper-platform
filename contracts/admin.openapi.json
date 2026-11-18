@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "StuHelper platform administration",
-    "version": "0.3.0",
+    "version": "0.4.0",
     "description": "platform 管理授权与跨模块操作记录汇总。原始审计由各模块拥有；只返回脱敏摘要，不包含认证材料或交易载荷。"
   },
   "paths": {
@@ -94,6 +94,111 @@
       }
     },
     "/api/v1/platform/admin/roles": {
+      "get": {
+        "operationId": "listAdminRoles",
+        "description": "分页读取不可变角色定义。需要全局或任意范围的 platform.authorization.read 能力；可信平台管理员自动满足。按创建时间与角色 ID 降序排列，游标绑定操作者与筛选条件。",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "keyword",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          {
+            "name": "capability",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[a-z][a-z0-9._-]*$"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminRolePage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "能力或范围不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "身份或数据库不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminError"
+                }
+              }
+            }
+          }
+        }
+      },
       "post": {
         "operationId": "createAdminRole",
         "description": "只有可信平台管理员可以创建不可变角色定义。变更能力须使用新的角色 ID；角色数量上限 1000。",
@@ -844,6 +949,358 @@
           }
         }
       }
+    },
+    "/api/v1/platform/admin/administrators": {
+      "get": {
+        "operationId": "listAdministrators",
+        "description": "按学校、群、业务模块、角色或能力反查当前持有显式授权的管理员列表。请求范围先与调用方的 platform.authorization.read 有效范围求交集，无交集返回 403；返回的授权范围均收窄至调用方可见范围。单页最多返回 1,000 项收窄后的授权。超过上限返回 400 invalid_request，调用方可缩小查询范围或降低每页人数。游标绑定操作者、筛选条件与授权范围。",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "school",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "*",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          {
+            "name": "group",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "*",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          {
+            "name": "module",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "*",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          {
+            "name": "role_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[a-z][a-z0-9._-]*$"
+            }
+          },
+          {
+            "name": "capability",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[a-z][a-z0-9._-]*$"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 8192
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminAdministratorPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "能力或范围不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "身份或数据库不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/admin/administrators/{subject}/grant-changes": {
+      "post": {
+        "operationId": "changeAdminGrants",
+        "description": "在单一预期修订号与事务内原子执行同一管理员的多项角色授予与撤销，仅递增一次修订号，实现新旧角色无空窗切换。禁止给自己增加授权；委托权限规则与单次授予一致。",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "subject",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 2048,
+              "description": "account.Principal.Key() 编码的 issuer 与 subject。"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminGrantChangesInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminRevision"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "能力或范围不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "角色不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "授权修订号、角色定义或幂等请求冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "身份或数据库不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/admin/batch-grant-changes": {
+      "post": {
+        "operationId": "batchChangeAdminGrants",
+        "description": "多管理员授权变更预览（dry_run=true）与逐项执行（dry_run=false）。单批最多 50 名管理员且批内 subject 不重复。dry_run=false 时必须提供 Idempotency-Key，逐项返回 succeeded、conflict、forbidden 或 not_found 状态及最新修订号。",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "dry_run=false 时必填；相同幂等键重试返回原批量结果。",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminBatchGrantChangesInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminBatchGrantChangesResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "能力或范围不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "幂等请求摘要冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "身份或数据库不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -910,6 +1367,11 @@
             "minItems": 1,
             "maxItems": 64,
             "uniqueItems": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "角色创建时间；内置建议模板省略该字段。"
           }
         },
         "required": [
@@ -1155,6 +1617,10 @@
               "not_found",
               "unavailable"
             ]
+          },
+          "request_id": {
+            "type": "string",
+            "description": "请求追踪标识，与响应头 X-Request-ID 一致。"
           }
         },
         "required": [
@@ -1170,6 +1636,253 @@
           "unavailable"
         ],
         "description": "审计提供方缺失原因分类。"
+      },
+      "AdminRolePage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminRole"
+            },
+            "maxItems": 100
+          },
+          "next_cursor": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ]
+      },
+      "AdminAdministratorSummary": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "subject": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "string",
+            "pattern": "^[0-9]+$"
+          },
+          "grants": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminGrant"
+            },
+            "description": "符合筛选条件且收窄至调用方可见范围的显式授权。"
+          }
+        },
+        "required": [
+          "subject",
+          "revision",
+          "grants"
+        ]
+      },
+      "AdminAdministratorPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminAdministratorSummary"
+            },
+            "maxItems": 100
+          },
+          "next_cursor": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ]
+      },
+      "AdminGrantTarget": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "role_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[a-z][a-z0-9._-]*$"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/AdminScope"
+          }
+        },
+        "required": [
+          "role_id",
+          "scope"
+        ]
+      },
+      "AdminGrantChangesInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "add": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminGrantTarget"
+            },
+            "maxItems": 64
+          },
+          "revoke": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminGrantTarget"
+            },
+            "maxItems": 64
+          },
+          "expected_revision": {
+            "type": "string",
+            "pattern": "^[0-9]+$"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        },
+        "required": [
+          "add",
+          "revoke",
+          "expected_revision",
+          "reason"
+        ]
+      },
+      "AdminBatchGrantChangeItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "subject": {
+            "type": "string",
+            "maxLength": 2048,
+            "description": "account.Principal.Key() 编码的 issuer 与 subject。"
+          },
+          "expected_revision": {
+            "type": "string",
+            "pattern": "^[0-9]+$"
+          },
+          "add": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminGrantTarget"
+            },
+            "maxItems": 64
+          },
+          "revoke": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminGrantTarget"
+            },
+            "maxItems": 64
+          }
+        },
+        "required": [
+          "subject",
+          "expected_revision",
+          "add",
+          "revoke"
+        ]
+      },
+      "AdminBatchGrantChangeResultItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "subject": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "succeeded",
+              "conflict",
+              "forbidden",
+              "not_found"
+            ]
+          },
+          "revision": {
+            "type": "string",
+            "description": "执行成功或预览就绪时为新修订号；冲突时为当前实际修订号；无权限或角色不存在时为空字符串。"
+          },
+          "current_revision": {
+            "type": "string",
+            "description": "变更前观测到的当前修订号；无权限时为空字符串。"
+          },
+          "adding": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminGrant"
+            }
+          },
+          "revoking": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminGrant"
+            }
+          }
+        },
+        "required": [
+          "subject",
+          "status",
+          "revision",
+          "adding",
+          "revoking"
+        ]
+      },
+      "AdminBatchGrantChangesResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "dry_run": {
+            "type": "boolean"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminBatchGrantChangeResultItem"
+            },
+            "maxItems": 50
+          }
+        },
+        "required": [
+          "dry_run",
+          "items"
+        ]
+      },
+      "AdminBatchGrantChangesInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "dry_run": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminBatchGrantChangeItem"
+            },
+            "minItems": 1,
+            "maxItems": 50
+          }
+        },
+        "required": [
+          "dry_run",
+          "reason",
+          "items"
+        ]
       }
     }
   }

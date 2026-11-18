@@ -110,5 +110,128 @@
       },
       "code": "identity"
     }
-  ]
+  ],
+  "admin_cases": {
+    "conflicts": [
+      {
+        "name": "stale grant revision conflict includes request_id",
+        "status": 409,
+        "body": {
+          "code": "conflict",
+          "request_id": "0123456789abcdef0123456789abcdef"
+        },
+        "code": "conflict",
+        "retry_without_refresh": false
+      },
+      {
+        "name": "reused idempotency key with different payload",
+        "status": 409,
+        "body": {
+          "code": "conflict",
+          "request_id": "fedcba9876543210fedcba9876543210"
+        },
+        "code": "conflict",
+        "retry_without_refresh": false
+      }
+    ],
+    "operations_pages": [
+      {
+        "name": "partial cross-module operations page preserves available records",
+        "status": 200,
+        "body": {
+          "source": "platform",
+          "items": [
+            {
+              "id": "42",
+              "source": "platform",
+              "actor": "dXJuOnRlc3Q:Ym9zcw",
+              "action": "role.grant",
+              "target": "dXJuOnRlc3Q:bWVtYmVy",
+              "scope": {
+                "school": "buaa",
+                "group": "*",
+                "module": "resources"
+              },
+              "reason": "semester assignment",
+              "result": "success",
+              "created_at": "2026-11-18T00:00:00Z",
+              "role_id": "resources",
+              "revision": "1"
+            }
+          ],
+          "next_cursor": "",
+          "partial": true,
+          "missing_modules": [
+            "verification"
+          ],
+          "queried_modules": [
+            "platform",
+            "verification"
+          ]
+        },
+        "partial": true,
+        "missing_modules": [
+          "verification"
+        ]
+      }
+    ],
+    "idempotent_replays": [
+      {
+        "name": "duplicate PUT grant with identical Idempotency-Key returns original revision",
+        "status": 200,
+        "idempotency_key": "grant-buaa-resources-1",
+        "body": {
+          "revision": "1"
+        },
+        "replayed": true
+      }
+    ]
+  },
+  "eligibility_cases": {
+    "errors": [
+      {
+        "name": "malformed JSON or missing Idempotency-Key maps to invalid_request",
+        "status": 400,
+        "body": {
+          "code": "invalid_request",
+          "request_id": "11111111111111111111111111111111"
+        },
+        "code": "invalid_request"
+      },
+      {
+        "name": "unknown action or invalid condition set maps to invalid_rule",
+        "status": 400,
+        "body": {
+          "code": "invalid_rule",
+          "request_id": "22222222222222222222222222222222"
+        },
+        "code": "invalid_rule"
+      },
+      {
+        "name": "concurrent rule version conflict maps to conflict",
+        "status": 409,
+        "body": {
+          "code": "conflict",
+          "request_id": "33333333333333333333333333333333"
+        },
+        "code": "conflict",
+        "retry_without_refresh": false
+      }
+    ],
+    "idempotent_replays": [
+      {
+        "name": "duplicate PUT eligibility rule with identical Idempotency-Key returns original rule",
+        "status": 200,
+        "idempotency_key": "set-buaa-upload-1",
+        "body": {
+          "version": "2",
+          "conditions": [
+            "campus_eligibility",
+            "phone_bound"
+          ]
+        },
+        "replayed": true
+      }
+    ]
+  }
 }
