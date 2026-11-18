@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"regexp"
 	"slices"
 	"sort"
@@ -292,11 +293,13 @@ func (s Service) Operations(ctx context.Context, p account.Principal, f Filter) 
 		q := AuditRequest{Principal: p, Scopes: scopes[name], Actor: f.Actor, Target: f.Target, Action: f.Action, From: f.From, Until: c.Until, Before: c.Before, Snapshot: c.Snapshots[name], Limit: f.Limit + 1}
 		call, stop := context.WithTimeout(ctx, 250*time.Millisecond)
 		var batch AuditBatch
+		unconfigured := false
 		if name == "platform" {
 			err = s.Repo.View(call, func(st Store) error { var e error; batch, e = st.ReadAudit(call, q); return e })
 		} else if provider := s.AuditProviders[name]; provider != nil {
 			batch, err = provider.ReadAudit(call, q)
 		} else {
+			unconfigured = true
 			err = ErrUnavailable
 		}
 		if call.Err() != nil {
@@ -304,6 +307,18 @@ func (s Service) Operations(ctx context.Context, p account.Principal, f Filter) 
 		}
 		stop()
 		if err != nil || !validateBatch(name, q, batch) {
+			if s.Logger != nil {
+				reason := "provider_error"
+				switch {
+				case unconfigured:
+					reason = "provider_unconfigured"
+				case errors.Is(err, context.DeadlineExceeded):
+					reason = "provider_timeout"
+				case err == nil:
+					reason = "batch_validation_failed"
+				}
+				s.Logger.Warn("audit provider degraded", "module", name, "reason", reason)
+			}
 			c.Missing = append(c.Missing, name)
 			continue
 		}

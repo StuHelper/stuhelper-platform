@@ -10,12 +10,14 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/felixge/httpsnoop"
 
+	"github.com/StuHelper/stuhelper-platform/account"
 	"github.com/StuHelper/stuhelper-platform/internal/api/gen"
 	"github.com/StuHelper/stuhelper-platform/module"
 )
@@ -27,6 +29,11 @@ var (
 )
 
 type Principal struct{ Issuer, Subject string }
+
+func (p Principal) Valid() bool {
+	return (account.Principal{Issuer: p.Issuer, Subject: p.Subject}).Valid()
+}
+
 type Resource struct{ Type, ID string }
 type Authenticator interface {
 	Authenticate(*http.Request) (Principal, error)
@@ -46,6 +53,8 @@ type Route struct {
 	Method, Path, Module, Capability string
 	Access                           Access
 	Resource                         func(*http.Request) Resource
+	Limiter                          *SourceLimiter
+	Source                           func(*http.Request) string
 	Handler                          http.Handler
 }
 
@@ -75,6 +84,16 @@ func problem(w http.ResponseWriter, r *http.Request, status int, code string) {
 	JSON(w, status, gen.Problem{Code: code, RequestId: RequestID(r.Context())})
 }
 
+func requestSource(r *http.Request, extractor func(*http.Request) string) string {
+	if extractor != nil {
+		return extractor(r)
+	}
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil && host != "" {
+		return host
+	}
+	return r.RemoteAddr
+}
+
 // NewHandler rejects ambiguous registrations and requires explicit public or
 // protected access. An absent identity adapter never implies anonymous access.
 func NewHandler(registry *module.Registry, routes []Route, authn Authenticator, authz Authorizer, logger *slog.Logger) (handler http.Handler, err error) {
@@ -102,6 +121,10 @@ func NewHandler(registry *module.Registry, routes []Route, authn Authenticator, 
 			return nil, errors.New("route access must be explicit")
 		}
 		mux.Handle(route.Method+" "+route.Path, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if route.Limiter != nil && !route.Limiter.Allow(requestSource(r, route.Source)) {
+				problem(w, r, http.StatusTooManyRequests, "rate_limited")
+				return
+			}
 			ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 			available := registry.CapabilityAvailable(ctx, route.Module, route.Capability)
 			cancel()
@@ -115,10 +138,13 @@ func NewHandler(registry *module.Registry, routes []Route, authn Authenticator, 
 					return
 				}
 				principal, err := authn.Authenticate(r)
-				if err != nil || principal.Issuer == "" || principal.Subject == "" {
-					if errors.Is(err, ErrUnavailable) {
+				if err != nil || !principal.Valid() {
+					switch {
+					case errors.Is(err, ErrUnavailable):
 						problem(w, r, 503, "identity_unavailable")
-					} else {
+					case errors.Is(err, ErrForbidden):
+						problem(w, r, 403, "permission_denied")
+					default:
 						problem(w, r, 401, "authentication_required")
 					}
 					return
@@ -177,7 +203,8 @@ func NewHandler(registry *module.Registry, routes []Route, authn Authenticator, 
 			return
 		}
 		id := hex.EncodeToString(raw[:])
-		r = r.WithContext(context.WithValue(r.Context(), contextKey{}, id))
+		ctx := module.WithAvailabilityCache(context.WithValue(r.Context(), contextKey{}, id))
+		r = r.WithContext(ctx)
 		w.Header().Set("X-Request-ID", id)
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		defer func() {
