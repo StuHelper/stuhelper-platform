@@ -2,9 +2,12 @@ package module
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -13,6 +16,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 var (
@@ -30,6 +35,31 @@ type Remote struct {
 	Timeout       time.Duration
 	ProbeInterval time.Duration
 	MaxBackoff    time.Duration
+	Logger        *slog.Logger
+}
+
+func isRemoteConfigurationError(err error) bool {
+	if errors.Is(err, ErrRemoteConfiguration) {
+		return true
+	}
+	var certVerify *tls.CertificateVerificationError
+	var unknownAuth x509.UnknownAuthorityError
+	var hostErr x509.HostnameError
+	var certInvalid x509.CertificateInvalidError
+	var sysRoots x509.SystemRootsError
+	var extErr x509.UnhandledCriticalExtension
+	return errors.As(err, &certVerify) || errors.As(err, &unknownAuth) || errors.As(err, &hostErr) || errors.As(err, &certInvalid) || errors.As(err, &sysRoots) || errors.As(err, &extErr)
+}
+
+func remoteReason(err error) string {
+	switch {
+	case errors.Is(err, ErrRemoteConfiguration):
+		return "configuration_invalid"
+	case errors.Is(err, ErrRemoteIncompatible):
+		return "protocol_incompatible"
+	default:
+		return "unavailable"
+	}
 }
 
 func (config Remote) Definition() (Definition, error) {
@@ -73,6 +103,9 @@ func (config Remote) Definition() (Definition, error) {
 		}
 		response, err := client.Do(req)
 		if err != nil {
+			if isRemoteConfigurationError(err) {
+				return ErrRemoteConfiguration
+			}
 			return ErrRemoteUnavailable
 		}
 		defer response.Body.Close()
@@ -111,8 +144,12 @@ func (config Remote) Definition() (Definition, error) {
 	var active bool
 	store := func(result error) {
 		mu.Lock()
+		changed := (lastError == nil) != (result == nil) || (result != nil && !errors.Is(lastError, result))
 		checkedAt, lastError = time.Now(), result
 		mu.Unlock()
+		if result != nil && changed && config.Logger != nil {
+			config.Logger.Warn("remote module probe failed", "module", expected.ID, "reason", remoteReason(result))
+		}
 	}
 	start := func(ctx context.Context) error {
 		mu.RLock()
@@ -202,7 +239,7 @@ func readServiceToken(path string) (string, error) {
 		return "", ErrRemoteConfiguration
 	}
 	token := strings.TrimSpace(string(data))
-	if token == "" || strings.ContainsAny(token, "\r\n") {
+	if token == "" || !utf8.ValidString(token) || strings.ContainsFunc(token, unicode.IsControl) {
 		return "", ErrRemoteConfiguration
 	}
 	return token, nil

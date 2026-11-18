@@ -197,3 +197,37 @@ func TestRemoteSlowStartupBudget(t *testing.T) {
 		t.Fatal("unverified remote admitted traffic")
 	}
 }
+
+func TestRemoteUntrustedTLSAndControlTokenFailConfigurationOnStart(t *testing.T) {
+	desc := Descriptor{ID: "verification", Version: "test", API: 1}
+	tlsServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(desc)
+	}))
+	defer tlsServer.Close()
+
+	d, err := (Remote{Expected: desc, URL: tlsServer.URL, Timeout: time.Second}).Definition()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = d.Stop(context.Background()) })
+	if err = d.Start(context.Background()); !errors.Is(err, ErrRemoteConfiguration) {
+		t.Fatalf("expected ErrRemoteConfiguration for untrusted TLS certificate, got %v", err)
+	}
+
+	tokenFile := filepath.Join(t.TempDir(), "bad-token")
+	if err = os.WriteFile(tokenFile, []byte("bad\x00token"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	plainServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(desc)
+	}))
+	defer plainServer.Close()
+	d2, err := (Remote{Expected: desc, URL: plainServer.URL, TokenFile: tokenFile, Timeout: time.Second}).Definition()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = d2.Stop(context.Background()) })
+	if err = d2.Start(context.Background()); !errors.Is(err, ErrRemoteConfiguration) {
+		t.Fatalf("expected ErrRemoteConfiguration for control char in token file, got %v", err)
+	}
+}

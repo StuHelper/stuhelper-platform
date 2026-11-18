@@ -6,10 +6,13 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/StuHelper/stuhelper-platform/internal/api/gen"
+	"github.com/StuHelper/stuhelper-platform/module"
+	"github.com/StuHelper/stuhelper-platform/transport"
 )
 
 func TestListenerFailureStopsApplication(t *testing.T) {
@@ -89,4 +92,87 @@ func TestPublicFrameworkAndUnavailableIdentity(t *testing.T) {
 		t.Fatal(response.StatusCode, problem)
 	}
 	_, _ = io.Copy(io.Discard, response.Body)
+}
+
+func TestSlowHTTPHandlerDoesNotSkipModuleStopHooksAndDeduplicatesCapabilityProbe(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	address := listener.Addr().String()
+	_ = listener.Close()
+
+	var readyCalls atomic.Int32
+	var moduleStopped atomic.Bool
+	enteredHandler := make(chan struct{})
+	releaseHandler := make(chan struct{})
+	defer close(releaseHandler)
+
+	worker := module.Definition{
+		Descriptor: module.Descriptor{
+			ID:           "worker",
+			Version:      "development",
+			API:          1,
+			Requires:     []module.Dependency{{ID: "platform", API: 1}},
+			Capabilities: []string{"worker.slow"},
+		},
+		Stop: func(context.Context) error {
+			moduleStopped.Store(true)
+			return nil
+		},
+	}
+	slowRoute := transport.Route{
+		Method:     "GET",
+		Path:       "/api/v1/worker/slow",
+		Module:     "worker",
+		Capability: "worker.slow",
+		Access:     transport.Public,
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			close(enteredHandler)
+			<-releaseHandler
+		}),
+	}
+	app, err := New(Config{Address: address, Enabled: []string{"platform", "worker"}}, Modules{
+		PlatformReady: func(context.Context) error {
+			readyCalls.Add(1)
+			return nil
+		},
+		Definitions: []module.Definition{worker},
+		Routes:      []transport.Route{slowRoute},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	startCtx, startCancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer startCancel()
+	if err = app.Start(startCtx); err != nil {
+		t.Fatal(err)
+	}
+
+	// A-06: single GET /api/v1/system/capabilities should evaluate PlatformReady only once.
+	readyCalls.Store(0)
+	tr := &http.Transport{}
+	defer tr.CloseIdleConnections()
+	client := http.Client{Timeout: 2 * time.Second, Transport: tr}
+	resp, err := client.Get("http://" + address + "/api/v1/system/capabilities")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.Copy(io.Discard, resp.Body)
+	_ = resp.Body.Close()
+	if got := readyCalls.Load(); got != 1 {
+		t.Fatalf("expected 1 PlatformReady probe per capabilities request, got %d", got)
+	}
+
+	// A-04: start a slow active HTTP request and verify app.Stop still runs worker.Stop.
+	go func() {
+		_, _ = client.Get("http://" + address + "/api/v1/worker/slow")
+	}()
+	<-enteredHandler
+	stopCtx, stopCancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer stopCancel()
+	_ = app.Stop(stopCtx)
+	if !moduleStopped.Load() {
+		t.Fatalf("slow HTTP drain exhausted Fx stop context and skipped module Stop hook")
+	}
 }

@@ -9,8 +9,10 @@ import (
 	h "github.com/StuHelper/stuhelper-platform/modulehistory"
 	p "github.com/StuHelper/stuhelper-platform/postgres"
 	_ "github.com/jackc/pgx/v5/stdlib"
+	"log/slog"
 	"os"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -209,5 +211,121 @@ func TestPurchaseRulesGlobalAndSchoolOverrides(t *testing.T) {
 	}
 	if _, err := s.Get(ctx, "school", "resources.unlock"); !errors.Is(err, e.ErrRule) {
 		t.Fatal("unknown action accepted", err)
+	}
+}
+
+func TestRepositoryReadyCacheSingleflightRuntimePrivilegesAndDiagnostics(t *testing.T) {
+	repo, owner := setup(t)
+	var logs strings.Builder
+	now := time.Date(2026, 11, 18, 12, 0, 0, 0, time.UTC)
+	repo.Now = func() time.Time { return now }
+	repo.Logger = slog.New(slog.NewJSONHandler(&logs, nil))
+
+	var runtimeRole string
+	if err := repo.DB.QueryRow(`SELECT current_user`).Scan(&runtimeRole); err != nil {
+		t.Fatal(err)
+	}
+
+	// A-14: missing required privileges on new tables or sequence must fail CheckRuntime and log redacted reason.
+	for _, stmt := range [][2]string{
+		{`REVOKE USAGE ON SEQUENCE platform.audit_snapshot_slot FROM ` + runtimeRole, `GRANT USAGE ON SEQUENCE platform.audit_snapshot_slot TO ` + runtimeRole},
+		{`REVOKE INSERT ON platform.audit_snapshots FROM ` + runtimeRole, `GRANT INSERT ON platform.audit_snapshots TO ` + runtimeRole},
+		{`REVOKE UPDATE ON platform.audit_retention FROM ` + runtimeRole, `GRANT UPDATE ON platform.audit_retention TO ` + runtimeRole},
+		{`REVOKE SELECT ON platform.admin_roles FROM ` + runtimeRole, `GRANT SELECT ON platform.admin_roles TO ` + runtimeRole},
+	} {
+		if _, err := owner.Exec(stmt[0]); err != nil {
+			t.Fatal(err)
+		}
+		if err := repo.CheckRuntime(ctx); !errors.Is(err, e.ErrUnavailable) {
+			t.Fatalf("expected ErrUnavailable after %q, got %v", stmt[0], err)
+		}
+		if _, err := owner.Exec(stmt[1]); err != nil {
+			t.Fatal(err)
+		}
+		if err := repo.CheckRuntime(ctx); err != nil {
+			t.Fatalf("CheckRuntime did not recover after %q: %v", stmt[1], err)
+		}
+	}
+	if !strings.Contains(logs.String(), `"reason":"db_privilege"`) {
+		t.Fatalf("expected redacted db_privilege log, got %s", logs.String())
+	}
+
+	// A-06: Ready caches positive status for 1s and re-evaluates after TTL expiry.
+	var wg sync.WaitGroup
+	for range 16 {
+		wg.Go(func() {
+			if err := repo.Ready(ctx); err != nil {
+				t.Errorf("concurrent Ready failed: %v", err)
+			}
+		})
+	}
+	wg.Wait()
+
+	// Drop configuration table: within the 1s TTL window Ready uses memory snapshot, CheckRuntime fails immediately,
+	// and after advancing past 1s TTL Ready fails closed and emits redacted sqlstate diagnostic.
+	if _, err := owner.Exec(`DROP TABLE platform.configuration`); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Ready(ctx); err != nil {
+		t.Fatalf("expected cached Ready within 1s window, got %v", err)
+	}
+	now = now.Add(2 * time.Second)
+	if err := repo.Ready(ctx); !errors.Is(err, e.ErrUnavailable) {
+		t.Fatalf("expected ErrUnavailable after Ready TTL expired, got %v", err)
+	}
+	if !strings.Contains(logs.String(), `"operation":"ready"`) || strings.Contains(logs.String(), "platform.configuration") {
+		t.Fatalf("unexpected diagnostic log content: %s", logs.String())
+	}
+}
+
+func TestEligibilityActionWhitelistAndMalformedInputsNeverReturn503(t *testing.T) {
+	repo, owner := setup(t)
+	s := e.Service{Repo: repo}
+
+	// Unsupported course_enrollment on non-course-review actions returns ErrRule and writes nothing.
+	for _, action := range []string{"content.enter", "resources.upload", "membership.purchase"} {
+		if _, err := s.Set(ctx, "admin", "bad-"+action, "buaa", action, e.Change{ExpectedVersion: "1", Conditions: []e.Condition{e.Enrollment}}); !errors.Is(err, e.ErrRule) {
+			t.Fatalf("%s: expected ErrRule, got %v", action, err)
+		}
+	}
+	var count int
+	if err := owner.QueryRow(`SELECT count(*) FROM platform.eligibility_rules`).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("rejected rules persisted: count=%d err=%v", count, err)
+	}
+	if err := owner.QueryRow(`SELECT count(*) FROM platform.audit`).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("rejected rules wrote audit: count=%d err=%v", count, err)
+	}
+
+	// Malformed UTF-8, NUL, whitespace and overlong school/key/actor/version return ErrRule, never ErrUnavailable.
+	for _, badSchool := range []string{"", "   ", "buaa ", "\xff", "buaa\x00"} {
+		if _, err := s.Get(ctx, badSchool, "content.enter"); !errors.Is(err, e.ErrRule) {
+			t.Fatalf("Get(%q): expected ErrRule, got %v", badSchool, err)
+		}
+		if _, err := s.Set(ctx, "admin", "valid-key", badSchool, "content.enter", e.Change{ExpectedVersion: "1", Conditions: []e.Condition{}}); !errors.Is(err, e.ErrRule) {
+			t.Fatalf("Set(school=%q): expected ErrRule, got %v", badSchool, err)
+		}
+	}
+	if _, err := s.Set(ctx, "admin", "key\xff", "buaa", "content.enter", e.Change{ExpectedVersion: "1", Conditions: []e.Condition{}}); !errors.Is(err, e.ErrRule) {
+		t.Fatalf("Set(bad key): expected ErrRule, got %v", err)
+	}
+	if _, err := s.Set(ctx, "admin\xff", "valid-key", "buaa", "content.enter", e.Change{ExpectedVersion: "1", Conditions: []e.Condition{}}); !errors.Is(err, e.ErrRule) {
+		t.Fatalf("Set(bad actor): expected ErrRule, got %v", err)
+	}
+
+	// Supported course_enrollment on publish_course persists rule and audit atomically.
+	rule, err := s.Set(ctx, "admin", "ok-course", "buaa", "publish_course", e.Change{ExpectedVersion: "1", Conditions: []e.Condition{e.Campus, e.Enrollment}})
+	if err != nil || rule.Version != "2" || len(rule.SupportedConditions) != 5 {
+		t.Fatalf("publish_course Set failed: %+v, %v", rule, err)
+	}
+	if err := owner.QueryRow(`SELECT count(*) FROM platform.eligibility_rules WHERE school='buaa' AND action='publish_course'`).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("expected 1 persisted rule, got %d (%v)", count, err)
+	}
+
+	// Corrupted unsupported condition in database fails closed with ErrUnavailable.
+	if _, err := owner.Exec(`INSERT INTO platform.eligibility_rules(school,action,conditions) VALUES('buaa','content.enter','["course_enrollment"]')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Get(ctx, "buaa", "content.enter"); !errors.Is(err, e.ErrUnavailable) {
+		t.Fatalf("expected ErrUnavailable for corrupted DB condition, got %v", err)
 	}
 }
