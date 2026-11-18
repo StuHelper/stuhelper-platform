@@ -30,6 +30,10 @@ ALTER TABLE platform.audit ADD COLUMN IF NOT EXISTS recorded_xid xid8 NOT NULL D
 CREATE TABLE IF NOT EXISTS platform.audit_retention(singleton boolean PRIMARY KEY CHECK(singleton),revision bigint NOT NULL);
 INSERT INTO platform.audit_retention VALUES(true,1) ON CONFLICT DO NOTHING;
 CREATE INDEX IF NOT EXISTS platform_audit_merge ON platform.audit(created_at DESC,(id::text) COLLATE "C" DESC);
+CREATE INDEX IF NOT EXISTS platform_audit_scope_merge ON platform.audit(school,group_id,module,created_at DESC,(id::text) COLLATE "C" DESC);
+CREATE INDEX IF NOT EXISTS platform_audit_actor_merge ON platform.audit(actor,created_at DESC,(id::text) COLLATE "C" DESC);
+CREATE INDEX IF NOT EXISTS platform_audit_target_merge ON platform.audit(target,created_at DESC,(id::text) COLLATE "C" DESC);
+CREATE INDEX IF NOT EXISTS platform_audit_action_merge ON platform.audit(action,created_at DESC,(id::text) COLLATE "C" DESC);
 REVOKE ALL ON ALL TABLES IN SCHEMA platform FROM PUBLIC;
 
 -- Bounded visibility cache: slot reuse invalidates old tokens explicitly.

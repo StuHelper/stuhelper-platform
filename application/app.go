@@ -98,19 +98,31 @@ func New(config Config, modules Modules) (*fx.App, error) {
 				OnStart: func(context.Context) error {
 					listener, err := net.Listen("tcp", server.Addr)
 					if err != nil {
+						logger.Error("HTTP listener bind failed", "address", server.Addr, "reason", "listen_failed")
 						return errors.New("HTTP listener unavailable")
 					}
 					logger.Info("platform listening", "address", listener.Addr().String())
 					go func() {
 						if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
-							logger.Error("HTTP server stopped unexpectedly")
+							logger.Error("HTTP server stopped unexpectedly", "reason", "serve_failed")
 							_ = shutdown.Shutdown(fx.ExitCode(1))
 						}
 					}()
 					return nil
 				},
 				OnStop: func(ctx context.Context) error {
-					if err := server.Shutdown(ctx); err != nil {
+					// Reserve stop budget for downstream module OnStop hooks so a slow HTTP
+					// connection cannot exhaust Fx's shared stop context and skip cleanup.
+					budget := 8 * time.Second
+					if deadline, ok := ctx.Deadline(); ok {
+						if remaining := time.Until(deadline); remaining > 0 && remaining/2 < budget {
+							budget = remaining / 2
+						}
+					}
+					drainCtx, cancel := context.WithTimeout(ctx, budget)
+					defer cancel()
+					if err := server.Shutdown(drainCtx); err != nil {
+						logger.Warn("HTTP server forced close after drain budget", "reason", "drain_timeout")
 						_ = server.Close()
 						return err
 					}
