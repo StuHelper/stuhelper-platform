@@ -29,7 +29,7 @@ func adminError(e error) error {
 	if e == nil {
 		return nil
 	}
-	for _, known := range []error{a.ErrConflict, a.ErrNotFound, a.ErrForbidden, a.ErrInvalid, a.ErrUnavailable, context.Canceled, context.DeadlineExceeded} {
+	for _, known := range []error{a.ErrConflict, a.ErrNotFound, a.ErrForbidden, a.ErrInvalid, a.ErrSnapshotExpired, a.ErrUnavailable, context.Canceled, context.DeadlineExceeded} {
 		if errors.Is(e, known) {
 			return e
 		}

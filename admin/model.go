@@ -4,6 +4,7 @@ package admin
 import (
 	"context"
 	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 	"time"
@@ -20,6 +21,9 @@ var (
 	ErrConflict        = errors.New("conflict")
 	ErrNotFound        = errors.New("not_found")
 	ErrUnavailable     = errors.New("unavailable")
+	// ErrSnapshotExpired wraps ErrUnavailable so callers checking availability stay
+	// compatible while Operations distinguishes expired/cleaned paging snapshots.
+	ErrSnapshotExpired = fmt.Errorf("%w: snapshot_expired", ErrUnavailable)
 )
 
 type Scope struct {
@@ -188,13 +192,23 @@ type Record struct {
 	Result    string    `json:"result"`
 	CreatedAt time.Time `json:"created_at"`
 }
+type MissingReason string
+
+const (
+	MissingSnapshotExpired MissingReason = "snapshot_expired"
+	MissingUnconfigured    MissingReason = "unconfigured"
+	MissingTimeout         MissingReason = "timeout"
+	MissingUnavailable     MissingReason = "unavailable"
+)
+
 type Page struct {
-	Partial        bool     `json:"partial"`
-	MissingModules []string `json:"missing_modules"`
-	QueriedModules []string `json:"queried_modules"`
-	Source         string   `json:"source"`
-	Items          []Record `json:"items"`
-	NextCursor     string   `json:"next_cursor"`
+	Partial        bool                     `json:"partial"`
+	MissingModules []string                 `json:"missing_modules"`
+	MissingReasons map[string]MissingReason `json:"missing_reasons"`
+	QueriedModules []string                 `json:"queried_modules"`
+	Source         string                   `json:"source"`
+	Items          []Record                 `json:"items"`
+	NextCursor     string                   `json:"next_cursor"`
 }
 type Filter struct {
 	Sources               []string

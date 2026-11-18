@@ -60,6 +60,16 @@ type auditCursor struct {
 	Before        *AuditPosition
 	Snapshots     map[string]string
 	Missing       []string
+	Reasons       map[string]MissingReason
+}
+
+func validMissingReason(r MissingReason) bool {
+	switch r {
+	case MissingSnapshotExpired, MissingUnconfigured, MissingTimeout, MissingUnavailable:
+		return true
+	default:
+		return false
+	}
 }
 
 func position(r Record) AuditPosition { return AuditPosition{r.CreatedAt, r.Source, r.ID} }
@@ -201,7 +211,7 @@ func decodeAuditCursor(f Filter, binding, authorization string, names []string, 
 	if until.IsZero() || until.After(now) {
 		until = now
 	}
-	c := auditCursor{Version: 1, Binding: binding, Authorization: authorization, Until: until, Snapshots: map[string]string{}, Missing: []string{}}
+	c := auditCursor{Version: 1, Binding: binding, Authorization: authorization, Until: until, Snapshots: map[string]string{}, Missing: []string{}, Reasons: map[string]MissingReason{}}
 	if f.Cursor == "" {
 		return c, nil
 	}
@@ -215,6 +225,9 @@ func decodeAuditCursor(f Filter, binding, authorization string, names []string, 
 	if json.Unmarshal(raw, &c) != nil || c.Version != 1 || c.Before == nil || c.Snapshots == nil || c.Missing == nil || c.Until.IsZero() || c.Until.After(now) || (!f.Until.IsZero() && c.Until.After(f.Until)) {
 		return c, ErrInvalid
 	}
+	if c.Reasons == nil {
+		c.Reasons = map[string]MissingReason{}
+	}
 	if c.Binding != binding {
 		return c, ErrInvalid
 	}
@@ -224,7 +237,7 @@ func decodeAuditCursor(f Filter, binding, authorization string, names []string, 
 	if c.Before.Time.After(c.Until) || !clean(c.Before.ID, 256) || !slices.Contains(names, c.Before.Source) {
 		return c, ErrInvalid
 	}
-	if len(c.Snapshots) > maxAuditProviders || len(c.Missing) > maxAuditProviders {
+	if len(c.Snapshots) > maxAuditProviders || len(c.Missing) > maxAuditProviders || len(c.Reasons) > maxAuditProviders {
 		return c, ErrInvalid
 	}
 	seen := map[string]bool{}
@@ -232,7 +245,19 @@ func decodeAuditCursor(f Filter, binding, authorization string, names []string, 
 		if !slices.Contains(names, name) || seen[name] {
 			return c, ErrInvalid
 		}
+		if reason, ok := c.Reasons[name]; ok {
+			if !validMissingReason(reason) {
+				return c, ErrInvalid
+			}
+		} else {
+			c.Reasons[name] = MissingUnavailable
+		}
 		seen[name] = true
+	}
+	for name := range c.Reasons {
+		if !seen[name] {
+			return c, ErrInvalid
+		}
 	}
 	for name, token := range c.Snapshots {
 		if !slices.Contains(names, name) || !clean(token, 256) {
@@ -279,8 +304,21 @@ func validateBatch(name string, q AuditRequest, b AuditBatch) bool {
 	}
 	return true
 }
+func classifyMissing(unconfigured bool, callErr, err error) MissingReason {
+	if unconfigured {
+		return MissingUnconfigured
+	}
+	if errors.Is(err, ErrSnapshotExpired) {
+		return MissingSnapshotExpired
+	}
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(callErr, context.DeadlineExceeded) {
+		return MissingTimeout
+	}
+	return MissingUnavailable
+}
+
 func (s Service) Operations(ctx context.Context, p account.Principal, f Filter) (Page, error) {
-	out := Page{Source: "platform", Items: []Record{}, MissingModules: []string{}, QueriedModules: []string{}}
+	out := Page{Source: "platform", Items: []Record{}, MissingModules: []string{}, MissingReasons: map[string]MissingReason{}, QueriedModules: []string{}}
 	if err := validateFilter(f); err != nil {
 		return out, err
 	}
@@ -329,8 +367,9 @@ func (s Service) Operations(ctx context.Context, p account.Principal, f Filter) 
 			unconfigured = true
 			err = ErrUnavailable
 		}
-		if call.Err() != nil {
-			err = call.Err()
+		callErr := call.Err()
+		if callErr != nil && err == nil {
+			err = callErr
 		}
 		stop()
 		if err != nil || !validateBatch(name, q, batch) {
@@ -347,6 +386,7 @@ func (s Service) Operations(ctx context.Context, p account.Principal, f Filter) 
 				s.Logger.Warn("audit provider degraded", "module", name, "reason", reason)
 			}
 			c.Missing = append(c.Missing, name)
+			c.Reasons[name] = classifyMissing(unconfigured, callErr, err)
 			continue
 		}
 		c.Snapshots[name] = batch.Snapshot
@@ -372,6 +412,9 @@ func (s Service) Operations(ctx context.Context, p account.Principal, f Filter) 
 	out.Items = records
 	sort.Strings(c.Missing)
 	out.MissingModules = c.Missing
+	for k, v := range c.Reasons {
+		out.MissingReasons[k] = v
+	}
 	out.Partial = len(c.Missing) > 0
 	return out, nil
 }

@@ -79,7 +79,7 @@ platform 原始审计记录写入事务 ID，并用 PostgreSQL 可见性快照�
 
 保留期清理在同一事务递增审计清理修订号；分页期间发生清理会使平台快照失效，响应标记 platform 缺失。
 
-响应 queried_modules 列出本次获准的提供方。提供方故障、超时、快照失效或违反范围／排序要求时，整个提供方批次被丢弃，partial=true，missing_modules 列出缺失模块。没有可用记录时仍明确标记部分结果。
+响应 queried_modules 列出本次获准的提供方。提供方故障、超时、快照失效或违反范围／排序要求时，整个提供方批次被丢弃，partial=true，missing_modules 列出缺失模块，missing_reasons 区分 snapshot_expired、unconfigured、timeout 与 unavailable。没有可用记录时仍明确标记部分结果。
 
 同一分页过程持续保留缺失模块，不在后续页突然补入恢复的数据。恢复后需从第一页重新查询。partial=false 仅说明已装配且获准的提供方均返回成功；backend 应将预期存在但暂不可用的模块注册为 nil，使缺失可见。
 

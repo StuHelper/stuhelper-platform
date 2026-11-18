@@ -158,8 +158,10 @@ func (config Remote) Definition() (Definition, error) {
 		if alreadyStarted {
 			return ErrRemoteConfiguration
 		}
-		initialCtx, initialCancel := context.WithTimeout(ctx, min(config.Timeout, 200*time.Millisecond))
+		initialBudget := min(config.Timeout, 200*time.Millisecond)
+		initialCtx, initialCancel := context.WithTimeout(ctx, initialBudget)
 		result := probe(initialCtx)
+		initialTimedOut := initialCtx.Err() == context.DeadlineExceeded && ctx.Err() == nil && config.Timeout > initialBudget
 		initialCancel()
 		store(result)
 		if ctx.Err() != nil {
@@ -177,6 +179,13 @@ func (config Remote) Definition() (Definition, error) {
 		mu.Unlock()
 		go func() {
 			defer close(finished)
+			if initialTimedOut {
+				result := probe(monitorCtx)
+				if monitorCtx.Err() != nil {
+					return
+				}
+				store(result)
+			}
 			delay := config.ProbeInterval
 			timer := time.NewTimer(delay)
 			defer timer.Stop()
@@ -186,6 +195,9 @@ func (config Remote) Definition() (Definition, error) {
 					return
 				case <-timer.C:
 					result := probe(monitorCtx)
+					if monitorCtx.Err() != nil {
+						return
+					}
 					store(result)
 					if result == nil {
 						delay = config.ProbeInterval

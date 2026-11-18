@@ -241,6 +241,10 @@ export interface components {
             missing_modules: string[];
             /** @description 当前有效授权允许查询的已装配模块。 */
             queried_modules: string[];
+            /** @description 缺失模块到原因码的映射；snapshot_expired 表示回到第一页重新查询即可恢复。 */
+            missing_reasons?: {
+                [key: string]: components["schemas"]["AdminMissingReason"];
+            };
         };
         AdminError: {
             /** @enum {string} */
@@ -248,6 +252,11 @@ export interface components {
             /** @description 请求追踪标识，与响应头 X-Request-ID 一致。 */
             request_id?: string;
         };
+        /**
+         * @description 审计提供方缺失原因分类。
+         * @enum {string}
+         */
+        AdminMissingReason: "snapshot_expired" | "unconfigured" | "timeout" | "unavailable";
         AdminRolePage: {
             items: components["schemas"]["AdminRole"][];
             next_cursor: string;

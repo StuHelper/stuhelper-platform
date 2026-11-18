@@ -107,6 +107,30 @@ func (e AdminErrorCode) Valid() bool {
 	}
 }
 
+// Defines values for AdminMissingReason.
+const (
+	AdminMissingReasonSnapshotExpired AdminMissingReason = "snapshot_expired"
+	AdminMissingReasonTimeout         AdminMissingReason = "timeout"
+	AdminMissingReasonUnavailable     AdminMissingReason = "unavailable"
+	AdminMissingReasonUnconfigured    AdminMissingReason = "unconfigured"
+)
+
+// Valid indicates whether the value is a known member of the AdminMissingReason enum.
+func (e AdminMissingReason) Valid() bool {
+	switch e {
+	case AdminMissingReasonSnapshotExpired:
+		return true
+	case AdminMissingReasonTimeout:
+		return true
+	case AdminMissingReasonUnavailable:
+		return true
+	case AdminMissingReasonUnconfigured:
+		return true
+	default:
+		return false
+	}
+}
+
 // AdminAdministratorPage defines model for AdminAdministratorPage.
 type AdminAdministratorPage struct {
 	Items      []AdminAdministratorSummary `json:"items"`
@@ -150,7 +174,10 @@ type AdminAudit struct {
 type AdminAuditPage struct {
 	Items          []AdminAudit `json:"items"`
 	MissingModules []string     `json:"missing_modules"`
-	NextCursor     string       `json:"next_cursor"`
+
+	// MissingReasons 缺失模块到原因码的映射；snapshot_expired 表示回到第一页重新查询即可恢复。
+	MissingReasons *map[string]AdminMissingReason `json:"missing_reasons,omitempty"`
+	NextCursor     string                         `json:"next_cursor"`
 
 	// Partial 当前分页过程存在提供方缺失。
 	Partial bool `json:"partial"`
@@ -249,6 +276,9 @@ type AdminGrantTarget struct {
 	RoleId string     `json:"role_id"`
 	Scope  AdminScope `json:"scope"`
 }
+
+// AdminMissingReason 审计提供方缺失原因分类。
+type AdminMissingReason string
 
 // AdminMutation defines model for AdminMutation.
 type AdminMutation struct {
