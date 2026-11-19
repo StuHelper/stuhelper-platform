@@ -14,6 +14,41 @@ export interface paths {
         get: operations["getEligibilityRule"];
         put: operations["setEligibilityRule"];
         post?: never;
+        /** @description 删除指定学校的显式覆盖规则并恢复继承全站规则；禁止对全站 * 执行删除。不存在学校覆盖时返回 409。 */
+        delete: operations["resetEligibilityRule"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform/eligibility/{school}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description 读取指定学校或全站（*）全部 15 个动作的生效规则矩阵、规则来源、全站基准条件与当前范围修订号。 */
+        get: operations["getSchoolEligibility"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform/eligibility-check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description 面向已登录师生前端与移动端的批量动作资格预检接口。一次返回当前账号在指定学校与动作集合上的满足状态、缺失条件与暂不可用条件。 */
+        get: operations["checkEligibilityActions"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -27,19 +62,58 @@ export interface components {
         Rule: {
             version: string;
             conditions: ("content_access" | "campus_eligibility" | "phone_bound" | "identity_verified" | "course_enrollment")[];
+            source?: components["schemas"]["RuleSource"];
+            global_conditions?: components["schemas"]["Condition"][];
+            /** @description 当前动作允许配置的条件白名单。仅 publish_course 支持 course_enrollment，其余动作支持 content_access、campus_eligibility、phone_bound、identity_verified。 */
+            supported_conditions?: ("content_access" | "campus_eligibility" | "phone_bound" | "identity_verified" | "course_enrollment")[];
         };
         Change: {
             expected_version: string;
+            /** @description 目标动作生效条件集合，必须属于该动作支持的条件白名单（仅 publish_course 允许包含 course_enrollment），越界条件返回 400 invalid_rule。 */
             conditions: ("content_access" | "campus_eligibility" | "phone_bound" | "identity_verified" | "course_enrollment")[];
+            /** @description 配置变更原因，写入平台审计记录。 */
+            reason?: string;
         };
         Error: {
-            code: string;
+            /** @enum {string} */
+            code: "invalid_request" | "invalid_rule" | "unauthenticated" | "forbidden" | "conflict" | "method_not_allowed" | "unavailable";
+            /** @description 请求追踪标识，与响应头 X-Request-ID 一致。 */
+            request_id?: string;
+            evaluation?: components["schemas"]["EligibilityEvaluation"];
         };
         /**
-         * @description 动作目录。resources.purchase 与 membership.purchase 默认要求 campus_eligibility；登录由调用方已验证身份保证。各动作独立支持全站规则与授权范围覆盖。
+         * @description 动作目录。resources.purchase 与 membership.purchase 默认要求 campus_eligibility；登录由调用方已验证身份保证。仅 publish_course 支持 course_enrollment，其余 14 个动作支持 content_access、campus_eligibility、phone_bound、identity_verified。各动作独立支持全站规则与授权范围覆盖。
          * @enum {string}
          */
         Action: "content.enter" | "read_full" | "vote" | "bookmark" | "report" | "resources.discover" | "resources.download.public" | "resources.download.restricted" | "resources.purchase" | "membership.purchase" | "publish_course" | "publish_mentor" | "reply" | "resources.upload" | "reply_teacher";
+        /** @enum {string} */
+        Condition: "content_access" | "campus_eligibility" | "phone_bound" | "identity_verified" | "course_enrollment";
+        /** @enum {string} */
+        RuleSource: "initial_default" | "global" | "school_override";
+        Reset: {
+            expected_version: string;
+            reason: string;
+        };
+        SchoolConfiguration: {
+            school: string;
+            version: string;
+            rules: {
+                [key: string]: components["schemas"]["Rule"];
+            };
+        };
+        EligibilityEvaluation: {
+            action: components["schemas"]["Action"];
+            school: string;
+            allowed: boolean;
+            rule_version: string;
+            satisfied_conditions: components["schemas"]["Condition"][];
+            missing_conditions: components["schemas"]["Condition"][];
+            unavailable_conditions: components["schemas"]["Condition"][];
+        };
+        EligibilityEvaluationBatch: {
+            school: string;
+            items: components["schemas"]["EligibilityEvaluation"][];
+        };
     };
     responses: never;
     parameters: never;
@@ -121,6 +195,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                /** @description 1—128 个非空白可打印 ASCII 字符。 */
                 "Idempotency-Key": string;
             };
             path: {
@@ -181,6 +256,197 @@ export interface operations {
                 };
             };
             /** @description 配置不可用或容量已满 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    resetEligibilityRule: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                school: string;
+                action: components["schemas"]["Action"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Reset"];
+            };
+        };
+        responses: {
+            /** @description 恢复继承后的生效规则或原操作重放结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Rule"];
+                };
+            };
+            /** @description 参数无效或禁止删除全站默认范围 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 未登录 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 无当前学校配置权限 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 版本冲突、幂等键冲突或该学校不存在覆盖规则 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 配置不可用 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getSchoolEligibility: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                school: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 整校或全站规则矩阵 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SchoolConfiguration"];
+                };
+            };
+            /** @description 参数无效 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 未登录 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 无当前学校配置权限 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 配置不可用 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    checkEligibilityActions: {
+        parameters: {
+            query: {
+                school: string;
+                actions: components["schemas"]["Action"][];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 动作资格预检结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EligibilityEvaluationBatch"];
+                };
+            };
+            /** @description 参数无效 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 未登录 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 跨校或身份被拒绝 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 资格规则不可用 */
             503: {
                 headers: {
                     [name: string]: unknown;

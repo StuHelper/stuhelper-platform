@@ -358,6 +358,7 @@ func TestAdminMigrationRetentionAndPageBound(t *testing.T) {
 	// Reconstruct the pre-admin schema in this test's disposable database while
 	// keeping an existing configuration audit, then exercise the actual migration.
 	if _, err := owner.Exec(`INSERT INTO platform.audit(actor,action,target,data,created_at) VALUES('old','eligibility.set','school:content.enter','{}',now());
+ DELETE FROM platform.schema_migrations WHERE version >= 2;
  DROP TABLE platform.admin_grants,platform.admin_subjects,platform.admin_roles,platform.admin_requests;
  ALTER TABLE platform.audit DROP COLUMN school,DROP COLUMN group_id,DROP COLUMN module,DROP COLUMN reason,DROP COLUMN result`); err != nil {
 		t.Fatal(err)

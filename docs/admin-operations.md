@@ -1,7 +1,7 @@
 ---
 type: development
 status: InReview
-updated: 2026-11-18
+updated: 2026-11-19
 ---
 
 # 管理角色与操作记录
@@ -12,11 +12,13 @@ updated: 2026-11-18
 
 platform 拥有统一操作记录查询。各业务模块继续拥有原始审计，并与业务写入同事务提交。platform 通过公开提供方接口读取脱敏摘要，不直接访问其他模块数据库，也不复制认证材料或交易载荷。
 
+管理员列表每页最多返回 1,000 项可见授权。学校、群和模块范围求交后超出上限时，接口返回 400。调用方可收窄范围或减少每页人数。
+
 ## 接口与装配
 
-OpenAPI 0.3.0 位于 contracts/admin.openapi.json。Go SDK 位于 sdk/admin，TypeScript 类型位于 sdk/admin.gen.ts。生成与兼容性检查纳入 make check。
+OpenAPI 0.4.0 位于 contracts/admin.openapi.json。Go SDK 位于 sdk/admin，TypeScript 类型位于 sdk/admin.gen.ts。生成与兼容性检查纳入 make check。
 
-宿主使用 admin/httpapi.Handler.Register 注册 /api/v1/platform/admin 下的路由。Authenticate 必须校验当前会话，并在写请求中校验 CSRF。缺少身份适配器时返回不可用，HTTP 请求不能声明平台管理员身份。
+宿主可使用 admin/httpapi.NewRoutes 或 Handler.Routes 统一生成 transport.Route 切片（也可通过 Handler.Register 挂载至 ServeMux）。Authenticate 必须校验当前会话并在写请求中校验 CSRF，错误响应携带与 X-Request-ID 一致的 request_id。缺少身份适配器时返回不可用，HTTP 请求不能声明平台管理员身份。
 
 公开 Go 接口为 admin.Service.Evaluate(ctx, principal, capability, scope)。principal 使用 account.Principal，由可信认证结果提供。对象的学校、群和业务模块范围由所属业务 Service 提供，不能直接信任请求参数。
 
@@ -34,7 +36,9 @@ Identity.PlatformAdmin 每次查询当前身份与账号状态。Casdoor 目标�
 
 平台管理员可以授予任意能力和任意范围。普通授予者必须拥有目标范围的 platform.authorization.manage，以及被授予的每个能力和完整目标范围。只有平台管理员可授予 platform.* 能力。任何人均不能给自己增加授权。
 
-授权集合以管理员为单位使用递增修订号。授予、撤销必须提交 expected_revision，冲突返回 409。重复授权由数据库唯一约束拒绝。不可变角色防止通过修改已持有角色扩大自己的能力。
+授权集合以管理员为单位使用递增修订号。授予、撤销及单账号原子替换（grant-changes）必须提交 expected_revision，冲突返回 409。单账号原子替换在同一事务内完成新旧角色切换并只递增一次修订号，批量接口（batch-grant-changes）支持最多 50 名管理员的 dry_run 预览与逐项执行。
+
+角色列表（GET /roles）向具备全局或任意范围 platform.authorization.read 的身份按创建时间和角色 ID 降序分页返回角色定义。管理员反查列表（GET /administrators）先将查询条件与当前授权范围求交集，再返回收窄后的授权摘要及当前修订号。
 
 授权求值不缓存角色与范围。撤销提交后发起的新请求立即读取新状态。已经开始的查询使用一致性事务快照；所属业务模块须在实际操作前调用授权接口，不能将一次判断长期保存为通行凭据。
 
@@ -71,11 +75,11 @@ admin.AuditProvider.ReadAudit 接收可信操作者、已授权范围集合、�
 
 platform 原始审计记录写入事务 ID，并用 PostgreSQL 可见性快照排除延迟提交。快照存入 audit_snapshots，令牌为 32 字节随机十六进制标识，不接受旧格式。
 
-快照最多 4,096 项，每项可见性文本上限 1 MiB，有效期 24 小时。槽位循环复用，淘汰或过期后原令牌返回不可用。Cleanup 每轮最多删除 100 项过期快照。快照写入使用独立连接，连接池须允许审计读取事务之外的连接。
+快照最多 4,096 项，每项可见性文本上限 1 MiB，有效期 24 小时。有身份请求按操作者哈希划分 64 个独立槽位桶，防止单个操作者高频查询清退全站快照。各实例通过 PostgreSQL 事务锁在同一桶中优先选用空槽，桶满时替换最早的快照。快照在只读事务提交释放连接后再写入数据库，消除单连接池嵌套请求死锁。Cleanup 每轮最多删除 100 项过期快照。
 
 保留期清理在同一事务递增审计清理修订号；分页期间发生清理会使平台快照失效，响应标记 platform 缺失。
 
-响应 queried_modules 列出本次获准的提供方。提供方故障、超时、快照失效或违反范围／排序要求时，整个提供方批次被丢弃，partial=true，missing_modules 列出缺失模块。没有可用记录时仍明确标记部分结果。
+响应 queried_modules 列出本次获准的提供方。提供方故障、超时、快照失效或违反范围／排序要求时，整个提供方批次被丢弃，partial=true，missing_modules 列出缺失模块，missing_reasons 区分 snapshot_expired、unconfigured、timeout 与 unavailable。没有可用记录时仍明确标记部分结果。
 
 同一分页过程持续保留缺失模块，不在后续页突然补入恢复的数据。恢复后需从第一页重新查询。partial=false 仅说明已装配且获准的提供方均返回成功；backend 应将预期存在但暂不可用的模块注册为 nil，使缺失可见。
 
@@ -83,7 +87,7 @@ platform 原始审计记录写入事务 ID，并用 PostgreSQL 可见性快照�
 
 ## 数据库与后续接入
 
-迁移身份执行 postgres.Migrate，新增表和审计列，不覆盖旧业务数据。audit_snapshots 需要 SELECT／INSERT／UPDATE／DELETE，audit_snapshot_slot 序列需要 USAGE；现有按 schema 授权脚本须在迁移后重跑。快照元数据独立提交，查询失败留下的条目仍受容量和过期规则限制。
+迁移身份执行 postgres.Migrate，按 platform.schema_migrations 记录的版本号增量执行未应用的 DDL，避免重复重启时对存量审计表申请排他锁，不覆盖旧业务数据。audit_snapshots 需要 SELECT／INSERT／UPDATE／DELETE，audit_snapshot_slot 序列需要 USAGE；现有按 schema 授权脚本须在迁移后重跑。快照元数据独立提交，查询失败留下的条目仍受容量和过期规则限制。
 
 audit_retention 保存清理修订号，运行身份需要 SELECT／UPDATE；audit 的 recorded_xid 由数据库默认写入。
 
@@ -106,7 +110,7 @@ backend 后续须更新依赖、运行身份授权和 platformapp 装配，注�
 | 授权边界 | 越权委托、自我提权、平台能力授予、范围外查询、撤销立即生效 |
 | 数据一致性 | 授权唯一约束、授权与审计原子提交、数据库身份隔离 |
 | 跨模块查询 | 多提供方稳定排序、回填及延迟提交、范围过滤、撤销翻页、故障／超时与保留期清理缺失标记 |
-| AO-03 | 待完成：批量预览与逐项执行结果，本轮未提供批量接口 |
+| AO-03 | 单账号原子角色切换无权限空窗，多管理员批量预览与逐项保存点隔离执行及幂等重放 |
 
 backend 授权适配、Web/Admin 消费者快照与页面、跨仓候选组合验证、真实账号验收均待后续任务。公开示例未装配真实管理员身份，本轮不涉及部署。
 
@@ -137,3 +141,7 @@ backend 授权适配、Web/Admin 消费者快照与页面、跨仓候选组合�
 所有模块适配器都需提供稳定快照、范围先过滤、取消响应和有界读取。缺少学校或群范围时不能向学校／群管理员返回记录。模块有自己的附加敏感审计权限时，适配器仍须执行该权限。
 
 候选 groups 与 information-query 尚无对应实现，不能声明群审计已接入。notifications.items／receipts 是通知与幂等数据，当前没有原始管理审计表，不应将消息内容转换为管理审计。
+
+角色能力名由命名空间和一个或多个非空分段组成，例如 `platform.audit.read`。迁移移除不符合格式的能力。若某角色已无有效能力，迁移同时移除该角色及其授权，并更新受影响账号的授权修订号。
+
+此次契约检查按接口、字段和新旧正则逐项确认角色能力名的变化。角色迁移后用 PostgreSQL 回归验证授权和修订号。所有维护分支采用新格式后，可移除 `admin-capability-migration.warn-ignore`。

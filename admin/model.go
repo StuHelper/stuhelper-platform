@@ -4,6 +4,7 @@ package admin
 import (
 	"context"
 	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 	"time"
@@ -20,6 +21,9 @@ var (
 	ErrConflict        = errors.New("conflict")
 	ErrNotFound        = errors.New("not_found")
 	ErrUnavailable     = errors.New("unavailable")
+	// ErrSnapshotExpired wraps ErrUnavailable so callers checking availability stay
+	// compatible while Operations distinguishes expired/cleaned paging snapshots.
+	ErrSnapshotExpired = fmt.Errorf("%w: snapshot_expired", ErrUnavailable)
 )
 
 type Scope struct {
@@ -54,10 +58,31 @@ func (s Scope) Intersection(t Scope) (Scope, bool) {
 }
 
 type Role struct {
-	ID           string   `json:"id"`
-	Name         string   `json:"name"`
-	LabelKey     string   `json:"label_key,omitempty"`
-	Capabilities []string `json:"capabilities"`
+	CreatedAt    *time.Time `json:"created_at,omitempty"`
+	ID           string     `json:"id"`
+	Name         string     `json:"name"`
+	LabelKey     string     `json:"label_key,omitempty"`
+	Capabilities []string   `json:"capabilities"`
+}
+type RolePage struct {
+	Items      []Role `json:"items"`
+	NextCursor string `json:"next_cursor"`
+}
+type RoleFilter struct {
+	Keyword    string
+	Capability string
+	Cursor     string
+	Limit      int
+}
+type RolePosition struct {
+	CreatedAt time.Time `json:"created_at"`
+	ID        string    `json:"id"`
+}
+type RoleQuery struct {
+	Before     *RolePosition
+	Keyword    string
+	Capability string
+	Limit      int
 }
 type RoleInput struct {
 	Role   Role   `json:"role"`
@@ -66,6 +91,72 @@ type RoleInput struct {
 type Grant struct {
 	Role  Role  `json:"role"`
 	Scope Scope `json:"scope"`
+}
+type GrantTarget struct {
+	RoleID string `json:"role_id"`
+	Scope  Scope  `json:"scope"`
+}
+type GrantChangesInput struct {
+	Add              []GrantTarget `json:"add"`
+	Revoke           []GrantTarget `json:"revoke"`
+	ExpectedRevision string        `json:"expected_revision"`
+	Reason           string        `json:"reason"`
+}
+type BatchItemStatus string
+
+const (
+	BatchReady     BatchItemStatus = "ready"
+	BatchSucceeded BatchItemStatus = "succeeded"
+	BatchConflict  BatchItemStatus = "conflict"
+	BatchForbidden BatchItemStatus = "forbidden"
+	BatchNotFound  BatchItemStatus = "not_found"
+)
+
+type BatchGrantChangeItem struct {
+	Subject          string        `json:"subject"`
+	ExpectedRevision string        `json:"expected_revision"`
+	Add              []GrantTarget `json:"add"`
+	Revoke           []GrantTarget `json:"revoke"`
+}
+type BatchGrantChangesInput struct {
+	DryRun bool                   `json:"dry_run"`
+	Reason string                 `json:"reason"`
+	Items  []BatchGrantChangeItem `json:"items"`
+}
+type BatchGrantChangeResultItem struct {
+	Subject         string          `json:"subject"`
+	Status          BatchItemStatus `json:"status"`
+	Revision        string          `json:"revision"`
+	CurrentRevision string          `json:"current_revision,omitempty"`
+	Adding          []Grant         `json:"adding"`
+	Revoking        []Grant         `json:"revoking"`
+}
+type BatchGrantChangesResult struct {
+	DryRun bool                         `json:"dry_run"`
+	Items  []BatchGrantChangeResultItem `json:"items"`
+}
+type AdministratorSummary struct {
+	Subject  string  `json:"subject"`
+	Revision string  `json:"revision"`
+	Grants   []Grant `json:"grants"`
+}
+type AdministratorPage struct {
+	Items      []AdministratorSummary `json:"items"`
+	NextCursor string                 `json:"next_cursor"`
+}
+type AdministratorFilter struct {
+	Scope      Scope
+	RoleID     string
+	Capability string
+	Cursor     string
+	Limit      int
+}
+type AdministratorQuery struct {
+	Scopes       []Scope
+	RoleID       string
+	Capability   string
+	AfterSubject string
+	Limit        int
 }
 type AuthorizationMode string
 
@@ -102,13 +193,23 @@ type Record struct {
 	Result    string    `json:"result"`
 	CreatedAt time.Time `json:"created_at"`
 }
+type MissingReason string
+
+const (
+	MissingSnapshotExpired MissingReason = "snapshot_expired"
+	MissingUnconfigured    MissingReason = "unconfigured"
+	MissingTimeout         MissingReason = "timeout"
+	MissingUnavailable     MissingReason = "unavailable"
+)
+
 type Page struct {
-	Partial        bool     `json:"partial"`
-	MissingModules []string `json:"missing_modules"`
-	QueriedModules []string `json:"queried_modules"`
-	Source         string   `json:"source"`
-	Items          []Record `json:"items"`
-	NextCursor     string   `json:"next_cursor"`
+	Partial        bool                     `json:"partial"`
+	MissingModules []string                 `json:"missing_modules"`
+	MissingReasons map[string]MissingReason `json:"missing_reasons"`
+	QueriedModules []string                 `json:"queried_modules"`
+	Source         string                   `json:"source"`
+	Items          []Record                 `json:"items"`
+	NextCursor     string                   `json:"next_cursor"`
 }
 type Filter struct {
 	Sources               []string
@@ -127,9 +228,12 @@ type Identity interface {
 }
 type Store interface {
 	Role(context.Context, string) (Role, error)
+	ListRoles(context.Context, RoleQuery) ([]Role, error)
 	Effective(context.Context, string) (Effective, error)
+	ListAdministrators(context.Context, AdministratorQuery) ([]AdministratorSummary, error)
 	CreateRole(context.Context, Role) error
 	Change(context.Context, string, Mutation, bool) (Revision, error)
+	ApplyGrantChanges(context.Context, string, string, []GrantTarget, []GrantTarget, string, string, time.Time) (Revision, error)
 	Record(context.Context, Record) error
 	Replay(context.Context, string, string, string, time.Time) ([]byte, error)
 	SaveReplay(context.Context, string, string, string, []byte, time.Time) error

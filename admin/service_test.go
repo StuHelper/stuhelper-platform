@@ -31,6 +31,7 @@ func (r *spyRepo) Write(_ context.Context, fn func(a.Store) error) error {
 }
 
 type spyStore struct {
+	a.Store
 	repo *spyRepo
 }
 

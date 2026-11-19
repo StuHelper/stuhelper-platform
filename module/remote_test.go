@@ -197,3 +197,82 @@ func TestRemoteSlowStartupBudget(t *testing.T) {
 		t.Fatal("unverified remote admitted traffic")
 	}
 }
+
+func TestRemoteColdStartRecoversBeforeFullProbeInterval(t *testing.T) {
+	desc := Descriptor{ID: "cold", Version: "test", API: 1, Capabilities: []string{"cold.read"}}
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if calls.Add(1) <= 2 {
+			select {
+			case <-time.After(260 * time.Millisecond):
+			case <-r.Context().Done():
+				return
+			}
+		}
+		_ = json.NewEncoder(w).Encode(desc)
+	}))
+	defer server.Close()
+
+	// ProbeInterval is intentionally long (5s): without immediate full-timeout follow-up
+	// after the 200ms startup probe expires, recovery would take >5s.
+	d, err := (Remote{
+		Expected:      desc,
+		URL:           server.URL,
+		Timeout:       time.Second,
+		ProbeInterval: 5 * time.Second,
+		MaxBackoff:    10 * time.Second,
+	}).Definition()
+	if err != nil {
+		t.Fatal(err)
+	}
+	started := time.Now()
+	if err = d.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = d.Stop(context.Background()) })
+	if time.Since(started) > 600*time.Millisecond {
+		t.Fatal("cold start blocked process startup")
+	}
+	deadline := time.Now().Add(1200 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if d.Ready(context.Background()) == nil {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("cold-starting remote module did not recover immediately using full Timeout")
+}
+
+func TestRemoteUntrustedTLSAndControlTokenFailConfigurationOnStart(t *testing.T) {
+	desc := Descriptor{ID: "verification", Version: "test", API: 1}
+	tlsServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(desc)
+	}))
+	defer tlsServer.Close()
+
+	d, err := (Remote{Expected: desc, URL: tlsServer.URL, Timeout: time.Second}).Definition()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = d.Stop(context.Background()) })
+	if err = d.Start(context.Background()); !errors.Is(err, ErrRemoteConfiguration) {
+		t.Fatalf("expected ErrRemoteConfiguration for untrusted TLS certificate, got %v", err)
+	}
+
+	tokenFile := filepath.Join(t.TempDir(), "bad-token")
+	if err = os.WriteFile(tokenFile, []byte("bad\x00token"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	plainServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(desc)
+	}))
+	defer plainServer.Close()
+	d2, err := (Remote{Expected: desc, URL: plainServer.URL, TokenFile: tokenFile, Timeout: time.Second}).Definition()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = d2.Stop(context.Background()) })
+	if err = d2.Start(context.Background()); !errors.Is(err, ErrRemoteConfiguration) {
+		t.Fatalf("expected ErrRemoteConfiguration for control char in token file, got %v", err)
+	}
+}

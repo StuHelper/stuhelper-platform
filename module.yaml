@@ -10,21 +10,37 @@ capabilities:
 capability_requires: {}
 scenario_tests:
   PLAT-CONFIG-01:
+    - postgres/migration_test.go#TestIncrementalMigrationPreservesExistingSchoolRevisions
     - postgres/integration_test.go#TestConfigurationConcurrencyReplayRollbackAndRetention
+    - postgres/integration_test.go#TestEligibilityActionWhitelistAndMalformedInputsNeverReturn503
+    - eligibility/admission_test.go#TestAdmissionFailsClosedWhenRulesUnwiredAndPreservesServedSchoolScope
+    - eligibility/httpapi/handler_test.go#TestEligibilityHTTPActionWhitelistValidationAndProtocolHeaders
     - eligibility/cache_test.go#TestRuleCacheExpiryInvalidationAndFailure
     - eligibility/cache_test.go#TestRuleCacheDoesNotReinsertInvalidatedInFlightRead
   PLAT-HISTORY-01:
     - postgres/integration_test.go#TestInstallationFactsAreDurableMonotoneAndUnknownFailsClosed
+    - postgres/integration_test.go#TestRepositoryReadyCacheSingleflightRuntimePrivilegesAndDiagnostics
   AO-01:
+    - admin/governance_limits_test.go#TestAdministratorGrantsSharePageLimitAndHonorCancellation
+    - postgres/admin_governance_test.go#TestAdminRoleListAndScopedAdministratorLookup
     - postgres/admin_test.go#TestAdminAO01AO04ScopeAndSeparateCapabilities
     - postgres/admin_test.go#TestAdminDelegationSelfEscalationAndImmediateRevocation
   AO-02:
     - postgres/admin_test.go#TestAdminAO02ConcurrentRevisionUniquenessAndReplay
     - postgres/admin_test.go#TestAdminHTTPAuthenticationValidationAndConflict
     - postgres/admin_test.go#TestAdminReplayExpiryRevokedTargetAndHTTPBoundaries
+  AO-03:
+    - postgres/admin_governance_test.go#TestAdminAO03AtomicAndBatchGrantChanges
   AO-04:
     - postgres/admin_test.go#TestAdminAO01AO04ScopeAndSeparateCapabilities
+  AO-05:
+    - postgres/admin_platform_test.go#TestPlatformAdministratorAllCapabilitiesAndDelegation
+    - postgres/admin_platform_test.go#TestPlatformEffectiveModeUsesCurrentTargetIdentity
+  AO-06:
+    - postgres/audit_test.go#TestAuditPartialResultsStayMarkedAndRejectBadProvider
+    - postgres/audit_test.go#TestAuditHTTPGeneratedClientPartialResponse
   PLAT-ADMIN-01:
+    - postgres/migration_test.go#TestResetInvalidRoleCapabilities
     - admin/service_test.go#TestEffectiveDecouplesTargetIdentityFromViewAndAllowsRevokedTargetInspection
     - admin/service_test.go#TestChangeLoadsDelegatorEffectiveGrantsOnceAndRejectsMalformedInputs
     - postgres/admin_test.go#TestAdminAtomicAuditFailureAndDatabaseIsolation
@@ -32,6 +48,11 @@ scenario_tests:
     - postgres/admin_test.go#TestAdminMigrationRetentionAndPageBound
   PLAT-AUDIT-01:
     - postgres/audit_test.go#TestPlatformAuditSnapshotExpiryEvictionAndTokenFormat
+    - postgres/audit_test.go#TestPlatformAuditSingleConnectionPoolDoesNotDeadlock
+    - postgres/audit_test.go#TestPlatformOperationsFutureFromAndDisjointModuleSources
+    - postgres/audit_test.go#TestPlatformAuditCursorVariantsAndIndexOrder
+    - postgres/audit_test.go#TestPlatformAuditSnapshotActorBucketIsolation
+    - postgres/audit_test.go#TestPlatformAuditCursorSurvivesAnotherRepository
     - postgres/audit_test.go#TestPlatformAuditManyPendingTransactions
     - postgres/audit_test.go#TestAuditProvidersStableMergeAndSnapshot
     - postgres/audit_test.go#TestAuditProvidersAuthorizationBeforeReadAndRevokedPage

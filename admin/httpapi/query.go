@@ -17,9 +17,14 @@ func parseQuery(r *http.Request) (url.Values, error) {
 	}
 	isRead := r.Method == "GET" || r.Method == "HEAD"
 	allowed := []string{}
-	if r.URL.Path == "/api/v1/platform/admin/operations" && isRead {
+	switch {
+	case r.URL.Path == "/api/v1/platform/admin/operations" && isRead:
 		allowed = []string{"school", "group", "module", "actor", "target", "action", "from", "until", "cursor", "limit", "sources"}
-	} else if r.PathValue("subject") != "" && isRead {
+	case r.URL.Path == "/api/v1/platform/admin/roles" && isRead:
+		allowed = []string{"keyword", "capability", "cursor", "limit"}
+	case r.URL.Path == "/api/v1/platform/admin/administrators" && isRead:
+		allowed = []string{"school", "group", "module", "role_id", "capability", "cursor", "limit"}
+	case r.PathValue("subject") != "" && isRead:
 		allowed = []string{"school", "group", "module"}
 	}
 	for k, v := range q {
