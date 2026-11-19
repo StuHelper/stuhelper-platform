@@ -358,6 +358,7 @@ func TestAdminMigrationRetentionAndPageBound(t *testing.T) {
 	// Reconstruct the pre-admin schema in this test's disposable database while
 	// keeping an existing configuration audit, then exercise the actual migration.
 	if _, err := owner.Exec(`INSERT INTO platform.audit(actor,action,target,data,created_at) VALUES('old','eligibility.set','school:content.enter','{}',now());
+ DELETE FROM platform.schema_migrations WHERE version >= 2;
  DROP TABLE platform.admin_grants,platform.admin_subjects,platform.admin_roles,platform.admin_requests;
  ALTER TABLE platform.audit DROP COLUMN school,DROP COLUMN group_id,DROP COLUMN module,DROP COLUMN reason,DROP COLUMN result`); err != nil {
 		t.Fatal(err)
@@ -420,5 +421,82 @@ func TestAdminMigrationRetentionAndPageBound(t *testing.T) {
 	current, err := s.Role(ctx, boss, "immutable")
 	if err != nil || len(current.Capabilities) != 1 || current.Capabilities[0] != "resources.manage" {
 		t.Fatal(current, err)
+	}
+}
+
+func TestAdminReplayExpiryRevokedTargetAndHTTPBoundaries(t *testing.T) {
+	repo, owner := setup(t)
+	now := time.Date(2026, 11, 18, 0, 0, 0, 0, time.UTC)
+	revokedSubject := account.Principal{Issuer: "urn:test", Subject: "revoked-admin"}
+	s := a.Service{
+		Repo: repo,
+		Now:  func() time.Time { return now },
+		Identity: platformIdentityFunc(func(_ context.Context, p account.Principal) (bool, error) {
+			if p == revokedSubject {
+				return false, a.ErrForbidden
+			}
+			return p == boss, nil
+		}),
+	}
+	role(t, s, "resources", "resources.manage")
+
+	// Grant at t0 with key "k1" (rev 0 -> 1), then revoke (rev 1 -> 2).
+	grantMut := a.Mutation{RoleID: "resources", Scope: school, ExpectedRevision: "0", Reason: "initial grant"}
+	rev, err := s.Change(ctx, boss, revokedSubject.Key(), "k1", grantMut, false)
+	if err != nil || rev.Revision != "1" {
+		t.Fatalf("initial grant failed: %+v %v", rev, err)
+	}
+
+	// A-05: querying a revoked target's effective grants returns ExplicitGrants and current revision (never 403).
+	eff, err := s.Effective(ctx, boss, revokedSubject.Key(), a.Global)
+	if err != nil || eff.AuthorizationMode != a.ExplicitGrants || eff.Revision != "1" || len(eff.Grants) != 1 {
+		t.Fatalf("revoked target Effective failed: %+v %v", eff, err)
+	}
+	revokeMut := a.Mutation{RoleID: "resources", Scope: school, ExpectedRevision: eff.Revision, Reason: "cleanup departed admin"}
+	rev, err = s.Change(ctx, boss, revokedSubject.Key(), "k2", revokeMut, true)
+	if err != nil || rev.Revision != "2" {
+		t.Fatalf("revoking departed admin failed: %+v %v", rev, err)
+	}
+
+	// A-07: advance clock by 25h without running Cleanup.
+	now = now.Add(25 * time.Hour)
+	// Stale replay with expected_revision="0" must no longer return cached 200 {"revision":"1"}; must hit revision conflict.
+	if _, err := s.Change(ctx, boss, revokedSubject.Key(), "k1", grantMut, false); !errors.Is(err, a.ErrConflict) {
+		t.Fatalf("expired replay returned stale success instead of ErrConflict: %v", err)
+	}
+	// Reusing expired key "k1" with current expected_revision="2" must replace the expired receipt and succeed (rev 2 -> 3).
+	regrantMut := grantMut
+	regrantMut.ExpectedRevision = "2"
+	rev, err = s.Change(ctx, boss, revokedSubject.Key(), "k1", regrantMut, false)
+	if err != nil || rev.Revision != "3" {
+		t.Fatalf("reusing expired idempotency key failed without Cleanup: %+v %v", rev, err)
+	}
+	var grantCount int
+	if err := owner.QueryRow(`SELECT count(*) FROM platform.admin_grants WHERE subject=$1`, revokedSubject.Key()).Scan(&grantCount); err != nil || grantCount != 1 {
+		t.Fatalf("expected 1 active grant after regrant, got %d (%v)", grantCount, err)
+	}
+
+	// A-16 & A-17: HEAD with query params, empty optional query params, nosniff/charset, and template label_key.
+	mux := http.NewServeMux()
+	ah.Handler{Service: s, Authenticate: func(*http.Request) (account.Principal, error) { return boss, nil }}.Register(mux)
+
+	headReq := httptest.NewRequest("HEAD", "/api/v1/platform/admin/administrators/"+url.PathEscape(revokedSubject.Key())+"/effective?school=school-a", nil)
+	headRec := httptest.NewRecorder()
+	mux.ServeHTTP(headRec, headReq)
+	if headRec.Code != 200 || headRec.Body.Len() != 0 || headRec.Header().Get("X-Content-Type-Options") != "nosniff" || !strings.Contains(headRec.Header().Get("Content-Type"), "charset=utf-8") {
+		t.Fatalf("HEAD /effective mismatch: code=%d len=%d headers=%v", headRec.Code, headRec.Body.Len(), headRec.Header())
+	}
+
+	emptyFilterReq := httptest.NewRequest("GET", "/api/v1/platform/admin/operations?actor=&target=&school=", nil)
+	emptyFilterRec := httptest.NewRecorder()
+	mux.ServeHTTP(emptyFilterRec, emptyFilterReq)
+	if emptyFilterRec.Code != 200 {
+		t.Fatalf("empty optional query params rejected: %d %s", emptyFilterRec.Code, emptyFilterRec.Body.String())
+	}
+
+	tplRec := httptest.NewRecorder()
+	mux.ServeHTTP(tplRec, httptest.NewRequest("GET", "/api/v1/platform/admin/role-templates", nil))
+	if tplRec.Code != 200 || !strings.Contains(tplRec.Body.String(), `"label_key":"platform.admin.role_template.platform"`) {
+		t.Fatalf("role-templates missing label_key: %d %s", tplRec.Code, tplRec.Body.String())
 	}
 }

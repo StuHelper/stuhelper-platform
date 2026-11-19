@@ -64,7 +64,23 @@ type Registry struct {
 }
 
 var identifier = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
-var capability = regexp.MustCompile(`^[a-z][a-z0-9-]*\.[a-z][a-z0-9.-]*$`)
+var capability = regexp.MustCompile(`^[a-z][a-z0-9-]*(\.[a-z][a-z0-9_-]*)+$`)
+
+type availabilityCacheKey struct{}
+
+type availabilityCache struct {
+	mu      sync.Mutex
+	results map[string]bool
+}
+
+// WithAvailabilityCache attaches a per-request availability memo to ctx so
+// route guards and capability endpoints do not probe the same module twice.
+func WithAvailabilityCache(ctx context.Context) context.Context {
+	if ctx.Value(availabilityCacheKey{}) != nil {
+		return ctx
+	}
+	return context.WithValue(ctx, availabilityCacheKey{}, &availabilityCache{results: map[string]bool{}})
+}
 
 // New validates the entire composition before hooks can start any work.
 func New(definitions []Definition, enabled []string) (*Registry, error) {
@@ -219,7 +235,24 @@ func (r *Registry) available(ctx context.Context, id string, results map[string]
 	if result, checked := results[id]; checked {
 		return result
 	}
-	defer func() { results[id] = available }()
+	cache, _ := ctx.Value(availabilityCacheKey{}).(*availabilityCache)
+	if cache != nil {
+		cache.mu.Lock()
+		result, checked := cache.results[id]
+		cache.mu.Unlock()
+		if checked {
+			results[id] = result
+			return result
+		}
+	}
+	defer func() {
+		results[id] = available
+		if cache != nil {
+			cache.mu.Lock()
+			cache.results[id] = available
+			cache.mu.Unlock()
+		}
+	}()
 	r.mu.RLock()
 	d, installed := r.definitions[id]
 	state := r.states[id]

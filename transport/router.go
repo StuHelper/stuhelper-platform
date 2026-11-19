@@ -10,12 +10,14 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/felixge/httpsnoop"
 
+	"github.com/StuHelper/stuhelper-platform/account"
 	"github.com/StuHelper/stuhelper-platform/internal/api/gen"
 	"github.com/StuHelper/stuhelper-platform/module"
 )
@@ -26,7 +28,7 @@ var (
 	ErrUnavailable     = errors.New("authorization unavailable")
 )
 
-type Principal struct{ Issuer, Subject string }
+type Principal = account.Principal
 type Resource struct{ Type, ID string }
 type Authenticator interface {
 	Authenticate(*http.Request) (Principal, error)
@@ -46,7 +48,23 @@ type Route struct {
 	Method, Path, Module, Capability string
 	Access                           Access
 	Resource                         func(*http.Request) Resource
+	Limiter                          *SourceLimiter
+	Source                           func(*http.Request) string
 	Handler                          http.Handler
+}
+
+type unavailableHandler struct {
+	http.Handler
+	code string
+}
+
+// WithUnavailableCode preserves the handler's published 503 error code when
+// module readiness prevents the router from calling the handler.
+func WithUnavailableCode(handler http.Handler, code string) http.Handler {
+	if handler == nil || code == "" {
+		return handler
+	}
+	return unavailableHandler{Handler: handler, code: code}
 }
 
 type Error = gen.Problem
@@ -64,6 +82,24 @@ func RequestID(ctx context.Context) string {
 	return value
 }
 
+// EnsureRequestID reuses the active context request ID or generates a new one,
+// ensuring X-Request-ID and X-Content-Type-Options headers are present.
+func EnsureRequestID(w http.ResponseWriter, r *http.Request) (*http.Request, string, error) {
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	if id := RequestID(r.Context()); id != "" {
+		w.Header().Set("X-Request-ID", id)
+		return r, id, nil
+	}
+	var raw [16]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return r, "", err
+	}
+	id := hex.EncodeToString(raw[:])
+	r = r.WithContext(context.WithValue(r.Context(), contextKey{}, id))
+	w.Header().Set("X-Request-ID", id)
+	return r, id, nil
+}
+
 func JSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
@@ -73,6 +109,16 @@ func JSON(w http.ResponseWriter, status int, value any) {
 
 func problem(w http.ResponseWriter, r *http.Request, status int, code string) {
 	JSON(w, status, gen.Problem{Code: code, RequestId: RequestID(r.Context())})
+}
+
+func requestSource(r *http.Request, extractor func(*http.Request) string) string {
+	if extractor != nil {
+		return extractor(r)
+	}
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil && host != "" {
+		return host
+	}
+	return r.RemoteAddr
 }
 
 // NewHandler rejects ambiguous registrations and requires explicit public or
@@ -94,19 +140,27 @@ func NewHandler(registry *module.Registry, routes []Route, authn Authenticator, 
 			return nil, errors.New("invalid module HTTP route")
 		}
 		switch route.Method {
-		case "GET", "POST", "PUT", "PATCH", "DELETE":
+		case "GET", "HEAD", "POST", "PUT", "PATCH", "DELETE":
 		default:
 			return nil, errors.New("invalid HTTP method")
 		}
 		if route.Access != Public && route.Access != Protected {
 			return nil, errors.New("route access must be explicit")
 		}
+		unavailableCode := "module_unavailable"
+		if h, ok := route.Handler.(unavailableHandler); ok {
+			unavailableCode = h.code
+		}
 		mux.Handle(route.Method+" "+route.Path, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if route.Limiter != nil && !route.Limiter.Allow(requestSource(r, route.Source)) {
+				problem(w, r, http.StatusTooManyRequests, "rate_limited")
+				return
+			}
 			ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 			available := registry.CapabilityAvailable(ctx, route.Module, route.Capability)
 			cancel()
 			if !available {
-				problem(w, r, 503, "module_unavailable")
+				problem(w, r, 503, unavailableCode)
 				return
 			}
 			if route.Access == Protected {
@@ -115,10 +169,13 @@ func NewHandler(registry *module.Registry, routes []Route, authn Authenticator, 
 					return
 				}
 				principal, err := authn.Authenticate(r)
-				if err != nil || principal.Issuer == "" || principal.Subject == "" {
-					if errors.Is(err, ErrUnavailable) {
+				if err != nil || !principal.Valid() {
+					switch {
+					case errors.Is(err, ErrUnavailable):
 						problem(w, r, 503, "identity_unavailable")
-					} else {
+					case errors.Is(err, ErrForbidden):
+						problem(w, r, 403, "permission_denied")
+					default:
 						problem(w, r, 401, "authentication_required")
 					}
 					return
@@ -171,15 +228,14 @@ func NewHandler(registry *module.Registry, routes []Route, authn Authenticator, 
 				return func(source io.Reader) (int64, error) { started = true; return next(source) }
 			},
 		})
-		var raw [16]byte
-		if _, err := rand.Read(raw[:]); err != nil {
+		var err error
+		var id string
+		r, id, err = EnsureRequestID(w, r)
+		if err != nil {
 			http.Error(w, "request unavailable", 503)
 			return
 		}
-		id := hex.EncodeToString(raw[:])
-		r = r.WithContext(context.WithValue(r.Context(), contextKey{}, id))
-		w.Header().Set("X-Request-ID", id)
-		w.Header().Set("X-Content-Type-Options", "nosniff")
+		r = r.WithContext(module.WithAvailabilityCache(r.Context()))
 		defer func() {
 			if recovered := recover(); recovered != nil {
 				if recovered == http.ErrAbortHandler {
@@ -193,6 +249,25 @@ func NewHandler(registry *module.Registry, routes []Route, authn Authenticator, 
 			}
 		}()
 		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+		if strings.HasPrefix(r.URL.Path, "/api/v1/") {
+			if _, pattern := mux.Handler(r); pattern == "" {
+				var allowed []string
+				for _, m := range []string{"GET", "POST", "PUT", "PATCH", "DELETE"} {
+					probe := *r
+					probe.Method = m
+					if _, p := mux.Handler(&probe); p != "" {
+						allowed = append(allowed, m)
+					}
+				}
+				if len(allowed) > 0 {
+					w.Header().Set("Allow", strings.Join(allowed, ", "))
+					problem(w, r, 405, "method_not_allowed")
+					return
+				}
+				problem(w, r, 404, "not_found")
+				return
+			}
+		}
 		mux.ServeHTTP(w, r)
 	}), nil
 }

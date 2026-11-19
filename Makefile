@@ -10,7 +10,7 @@ check: check-generated
 	node scripts/check-contracts.mjs
 	node scripts/check-boundaries.mjs
 	node --test scripts/*.test.mjs
-	test -z "$$(gofmt -l module transport internal application examples eligibility modulehistory postgres admin)"
+	test -z "$$(find . -name '*.go' -not -path './node_modules/*' -not -name '*.gen.go' -exec gofmt -l {} +)"
 	go vet ./...
 	go test -race ./...
 	go build ./...
@@ -22,12 +22,8 @@ build:
 run:
 	go run ./examples/server
 generate:
-	node scripts/generate-admin.mjs
-	node scripts/generate-eligibility.mjs
 	node scripts/generate.mjs
 check-generated:
-	node scripts/generate-admin.mjs --check
-	node scripts/generate-eligibility.mjs --check
 	node scripts/generate.mjs --check
 hooks:
 	pnpm exec lefthook install
