@@ -300,7 +300,10 @@ type AdminRole struct {
 	// CreatedAt 角色创建时间；内置建议模板省略该字段。
 	CreatedAt *time.Time `json:"created_at,omitempty"`
 	Id        string     `json:"id"`
-	Name      string     `json:"name"`
+
+	// LabelKey 内置角色模板的国际化翻译键（如 platform.admin.role_template.platform）；自定义角色省略此字段。
+	LabelKey *string `json:"label_key,omitempty"`
+	Name     string  `json:"name"`
 }
 
 // AdminRoleInput defines model for AdminRoleInput.
@@ -550,7 +553,7 @@ type ClientInterface interface {
 
 	// ListAdminRoleTemplates performs a GET /api/v1/platform/admin/role-templates (the `ListAdminRoleTemplates` operationId) request.
 	//
-	// 六种初始模板仅提供建议能力；不自动授权，不包含敏感能力。.
+	// 六种初始模板仅提供建议能力，包含稳定国际化翻译键 label_key；不自动授权，不包含敏感能力。.
 	ListAdminRoleTemplates(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListAdminRoles performs a GET /api/v1/platform/admin/roles (the `ListAdminRoles` operationId) request.
@@ -751,7 +754,7 @@ func (c *Client) ListPlatformOperations(ctx context.Context, params *ListPlatfor
 
 // ListAdminRoleTemplates performs a GET /api/v1/platform/admin/role-templates (the `ListAdminRoleTemplates` operationId) request.
 //
-// 六种初始模板仅提供建议能力；不自动授权，不包含敏感能力。.
+// 六种初始模板仅提供建议能力，包含稳定国际化翻译键 label_key；不自动授权，不包含敏感能力。.
 func (c *Client) ListAdminRoleTemplates(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListAdminRoleTemplatesRequest(c.Server)
 	if err != nil {
@@ -1773,7 +1776,7 @@ type ClientWithResponsesInterface interface {
 
 	// ListAdminRoleTemplatesWithResponse performs a GET /api/v1/platform/admin/role-templates (the `ListAdminRoleTemplates` operationId) request.
 	//
-	// 六种初始模板仅提供建议能力；不自动授权，不包含敏感能力。.
+	// 六种初始模板仅提供建议能力，包含稳定国际化翻译键 label_key；不自动授权，不包含敏感能力。.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	ListAdminRoleTemplatesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListAdminRoleTemplatesResponse, error)
@@ -2830,7 +2833,7 @@ func (c *ClientWithResponses) ListPlatformOperationsWithResponse(ctx context.Con
 
 // ListAdminRoleTemplatesWithResponse performs a GET /api/v1/platform/admin/role-templates (the `ListAdminRoleTemplates` operationId) request.
 //
-// 六种初始模板仅提供建议能力；不自动授权，不包含敏感能力。.
+// 六种初始模板仅提供建议能力，包含稳定国际化翻译键 label_key；不自动授权，不包含敏感能力。.
 //
 // Returns a wrapper object for the known response body format(s).
 func (c *ClientWithResponses) ListAdminRoleTemplatesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListAdminRoleTemplatesResponse, error) {

@@ -129,6 +129,7 @@ func failure(w http.ResponseWriter, requestID string, err error) {
 func (h Handler) serve(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	var reqID string
 	var idErr error
 	r, reqID, idErr = transport.EnsureRequestID(w, r)
@@ -164,8 +165,7 @@ func (h Handler) serve(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.URL.Path == "/api/v1/platform/admin/role-templates":
 		// Templates disclose only public suggestions, but still require a live identity.
-		_, err = h.Service.Effective(r.Context(), p, p.Key(), a.Global)
-		out = a.Templates()
+		out, err = h.Service.Templates(r.Context(), p)
 	case r.URL.Path == "/api/v1/platform/admin/roles" && r.Method == "GET":
 		rf := a.RoleFilter{Keyword: q.Get("keyword"), Capability: q.Get("capability"), Cursor: q.Get("cursor"), Limit: 50}
 		if q.Has("limit") {
@@ -246,6 +246,10 @@ func (h Handler) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		failure(w, reqID, err)
+		return
+	}
+	if r.Method == "HEAD" {
+		w.WriteHeader(http.StatusOK)
 		return
 	}
 	_ = json.NewEncoder(w).Encode(out)

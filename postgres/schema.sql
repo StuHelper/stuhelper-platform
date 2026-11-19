@@ -61,3 +61,24 @@ CREATE INDEX IF NOT EXISTS platform_audit_scope_merge ON platform.audit(school,g
 CREATE INDEX IF NOT EXISTS platform_audit_actor_merge ON platform.audit(actor,created_at DESC,(id::text) COLLATE "C" DESC);
 CREATE INDEX IF NOT EXISTS platform_audit_target_merge ON platform.audit(target,created_at DESC,(id::text) COLLATE "C" DESC);
 CREATE INDEX IF NOT EXISTS platform_audit_action_merge ON platform.audit(action,created_at DESC,(id::text) COLLATE "C" DESC);
+
+-- +migration 6
+-- Invalid strings have no unambiguous mapping to an authorization capability.
+CREATE TEMP TABLE invalid_role_capabilities ON COMMIT DROP AS
+SELECT r.id, coalesce(jsonb_agg(cap ORDER BY ord) FILTER (WHERE valid), '[]'::jsonb) AS remaining
+FROM platform.admin_roles r
+CROSS JOIN LATERAL jsonb_array_elements_text(r.definition->'capabilities') WITH ORDINALITY AS c(cap,ord)
+CROSS JOIN LATERAL (SELECT length(cap) <= 128 AND cap COLLATE "C" ~ '^[a-z][a-z0-9-]*([.][a-z][a-z0-9_-]*)+$' AS valid) v
+GROUP BY r.id HAVING NOT bool_and(valid);
+
+UPDATE platform.admin_subjects s SET revision = revision + 1
+WHERE EXISTS (SELECT 1 FROM platform.admin_grants g JOIN invalid_role_capabilities i ON i.id=g.role_id WHERE g.subject=s.subject);
+DELETE FROM platform.admin_grants g USING invalid_role_capabilities i WHERE g.role_id=i.id AND i.remaining='[]';
+DELETE FROM platform.admin_roles r USING invalid_role_capabilities i WHERE r.id=i.id AND i.remaining='[]';
+UPDATE platform.admin_roles r SET definition=jsonb_set(definition,'{capabilities}',i.remaining)
+FROM invalid_role_capabilities i WHERE r.id=i.id;
+
+-- Keep the keys reserved until expiry. A retry must never return an obsolete role.
+UPDATE platform.admin_requests SET digest='invalidated-role-format', result='{}'
+WHERE EXISTS (SELECT 1 FROM jsonb_path_query(result,'strict $.**.capabilities[*]', '{}', true) cap
+              WHERE length(cap #>> '{}') > 128 OR (cap #>> '{}') COLLATE "C" !~ '^[a-z][a-z0-9-]*([.][a-z][a-z0-9_-]*)+$');

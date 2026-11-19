@@ -30,10 +30,6 @@ func validReason(s string) bool {
 	return clean(s, 512) && strings.TrimSpace(s) != ""
 }
 
-func validKey(s string) bool {
-	return clean(s, 128) && strings.TrimSpace(s) == s
-}
-
 func validRevisionString(s string) (int64, bool) {
 	n, err := strconv.ParseInt(s, 10, 64)
 	if err != nil || n < 0 || strconv.FormatInt(n, 10) != s {
@@ -110,7 +106,7 @@ func (s Service) ListRoles(ctx context.Context, p account.Principal, f RoleFilte
 	if f.Keyword != "" && (!clean(f.Keyword, 128) || strings.TrimSpace(f.Keyword) == "") {
 		return out, ErrInvalid
 	}
-	if f.Capability != "" && (!identifier.MatchString(f.Capability) || !strings.Contains(f.Capability, ".")) {
+	if f.Capability != "" && !validCapability(f.Capability) {
 		return out, ErrInvalid
 	}
 	binding := digest([]any{p.Key(), f.Keyword, f.Capability, f.Limit})
@@ -220,7 +216,7 @@ func (s Service) ListAdministrators(ctx context.Context, p account.Principal, f 
 	if f.RoleID != "" && !identifier.MatchString(f.RoleID) {
 		return out, ErrInvalid
 	}
-	if f.Capability != "" && (!identifier.MatchString(f.Capability) || !strings.Contains(f.Capability, ".")) {
+	if f.Capability != "" && !validCapability(f.Capability) {
 		return out, ErrInvalid
 	}
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
@@ -381,14 +377,14 @@ func (s Service) ChangeGrants(ctx context.Context, p account.Principal, subject,
 			return e
 		}
 		hash := digest([]any{"grant.changes", subject, in})
-		b, e := st.Replay(ctx, p.Key(), key, hash)
+		at := s.now()
+		b, e := st.Replay(ctx, p.Key(), key, hash, at)
 		if e != nil {
 			return e
 		}
 		if b != nil {
 			return json.Unmarshal(b, &out)
 		}
-		at := s.now()
 		out, e = st.ApplyGrantChanges(ctx, subject, in.ExpectedRevision, in.Add, in.Revoke, p.Key(), in.Reason, at)
 		if e != nil {
 			return e
@@ -520,7 +516,8 @@ func (s Service) BatchChangeGrants(ctx context.Context, p account.Principal, key
 		}
 		roleCache := map[string]Role{}
 		hash := digest([]any{"batch.grant.changes", in})
-		b, e := st.Replay(ctx, p.Key(), key, hash)
+		at := s.now()
+		b, e := st.Replay(ctx, p.Key(), key, hash, at)
 		if e != nil {
 			return e
 		}
@@ -540,7 +537,6 @@ func (s Service) BatchChangeGrants(ctx context.Context, p account.Principal, key
 			out = cached
 			return nil
 		}
-		at := s.now()
 		for _, item := range in.Items {
 			res := BatchGrantChangeResultItem{Subject: item.Subject, Adding: []Grant{}, Revoking: []Grant{}}
 			adding, revoking, authErr := resolveAndAuthorizeTargets(ctx, st, p, platform, callerGrants, item.Subject, item.Add, item.Revoke, roleCache)

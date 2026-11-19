@@ -34,8 +34,10 @@ func (noopStore) CreateRole(context.Context, admin.Role) error { return nil }
 func (noopStore) Change(context.Context, string, admin.Mutation, bool) (admin.Revision, error) {
 	return admin.Revision{Revision: "1"}, nil
 }
-func (noopStore) Record(context.Context, admin.Record) error                     { return nil }
-func (noopStore) Replay(context.Context, string, string, string) ([]byte, error) { return nil, nil }
+func (noopStore) Record(context.Context, admin.Record) error { return nil }
+func (noopStore) Replay(context.Context, string, string, string, time.Time) ([]byte, error) {
+	return nil, nil
+}
 func (noopStore) SaveReplay(context.Context, string, string, string, []byte, time.Time) error {
 	return nil
 }

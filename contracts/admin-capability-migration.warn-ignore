@@ -1,0 +1,10 @@
+GET /api/v1/platform/admin/administrators changed the pattern of the `query` request parameter `capability` from `^[a-z][a-z0-9._-]*$` to `^[a-z][a-z0-9-]*(\.[a-z][a-z0-9_-]*)+$`
+GET /api/v1/platform/admin/administrators the `items/items/grants/items/role/capabilities/items/` response's property pattern was changed from `^[a-z][a-z0-9._-]*$` to `^[a-z][a-z0-9-]*(\.[a-z][a-z0-9_-]*)+$` for the status `200`
+GET /api/v1/platform/admin/administrators/{subject}/effective the `grants/items/role/capabilities/items/` response's property pattern was changed from `^[a-z][a-z0-9._-]*$` to `^[a-z][a-z0-9-]*(\.[a-z][a-z0-9_-]*)+$` for the status `200`
+POST /api/v1/platform/admin/batch-grant-changes the `items/items/adding/items/role/capabilities/items/` response's property pattern was changed from `^[a-z][a-z0-9._-]*$` to `^[a-z][a-z0-9-]*(\.[a-z][a-z0-9_-]*)+$` for the status `200` (shared schema: `AdminGrant`, also at `items/items/revoking/items/role/capabilities/items/`)
+GET /api/v1/platform/admin/role-templates the `items/capabilities/items/` response's property pattern was changed from `^[a-z][a-z0-9._-]*$` to `^[a-z][a-z0-9-]*(\.[a-z][a-z0-9_-]*)+$` for the status `200`
+GET /api/v1/platform/admin/roles changed the pattern of the `query` request parameter `capability` from `^[a-z][a-z0-9._-]*$` to `^[a-z][a-z0-9-]*(\.[a-z][a-z0-9_-]*)+$`
+GET /api/v1/platform/admin/roles the `items/items/capabilities/items/` response's property pattern was changed from `^[a-z][a-z0-9._-]*$` to `^[a-z][a-z0-9-]*(\.[a-z][a-z0-9_-]*)+$` for the status `200`
+POST /api/v1/platform/admin/roles changed the pattern of the request property `role/capabilities/items/` from `^[a-z][a-z0-9._-]*$` to `^[a-z][a-z0-9-]*(\.[a-z][a-z0-9_-]*)+$`
+POST /api/v1/platform/admin/roles the `capabilities/items/` response's property pattern was changed from `^[a-z][a-z0-9._-]*$` to `^[a-z][a-z0-9-]*(\.[a-z][a-z0-9_-]*)+$` for the status `200`
+GET /api/v1/platform/admin/roles/{role} the `capabilities/items/` response's property pattern was changed from `^[a-z][a-z0-9._-]*$` to `^[a-z][a-z0-9-]*(\.[a-z][a-z0-9_-]*)+$` for the status `200`

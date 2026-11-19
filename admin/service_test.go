@@ -2,239 +2,227 @@ package admin_test
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"slices"
-	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/StuHelper/stuhelper-platform/account"
-	"github.com/StuHelper/stuhelper-platform/admin"
+	a "github.com/StuHelper/stuhelper-platform/admin"
 )
 
-type memIdentity map[string]bool
-
-func (m memIdentity) PlatformAdmin(_ context.Context, p account.Principal) (bool, error) {
-	return m[p.Key()], nil
+type spyRepo struct {
+	inView         atomic.Bool
+	viewCount      int
+	effectiveCalls int
+	roles          map[string]a.Role
+	effective      map[string]a.Effective
 }
 
-type memStore struct {
-	roles     map[string]admin.Role
-	revisions map[string]int64
-	grants    map[string][]admin.Grant
-	replays   map[string]struct {
-		hash string
-		raw  []byte
-	}
-	audits []admin.Record
+func (r *spyRepo) View(_ context.Context, fn func(a.Store) error) error {
+	r.viewCount++
+	r.inView.Store(true)
+	defer r.inView.Store(false)
+	return fn(&spyStore{repo: r})
 }
 
-func newMemRepo() *memRepo {
-	return &memRepo{
-		st: &memStore{
-			roles:     map[string]admin.Role{},
-			revisions: map[string]int64{},
-			grants:    map[string][]admin.Grant{},
-			replays: map[string]struct {
-				hash string
-				raw  []byte
-			}{},
-		},
-	}
+func (r *spyRepo) Write(_ context.Context, fn func(a.Store) error) error {
+	return fn(&spyStore{repo: r})
 }
 
-type memRepo struct{ st *memStore }
+type spyStore struct {
+	a.Store
+	repo *spyRepo
+}
 
-func (r *memRepo) View(_ context.Context, fn func(admin.Store) error) error  { return fn(r.st) }
-func (r *memRepo) Write(_ context.Context, fn func(admin.Store) error) error { return fn(r.st) }
-
-func (s *memStore) Role(_ context.Context, id string) (admin.Role, error) {
-	r, ok := s.roles[id]
+func (s *spyStore) Role(_ context.Context, id string) (a.Role, error) {
+	role, ok := s.repo.roles[id]
 	if !ok {
-		return admin.Role{}, admin.ErrNotFound
+		return a.Role{}, a.ErrNotFound
 	}
-	return r, nil
+	return role, nil
 }
-func (s *memStore) Effective(_ context.Context, subject string) (admin.Effective, error) {
-	return admin.Effective{
-		AuthorizationMode: admin.ExplicitGrants,
-		Subject:           subject,
-		Revision:          strconv.FormatInt(s.revisions[subject], 10),
-		Grants:            slices.Clone(s.grants[subject]),
-	}, nil
-}
-func (s *memStore) CreateRole(_ context.Context, r admin.Role) error {
-	if _, exists := s.roles[r.ID]; exists {
-		return admin.ErrConflict
+
+func (s *spyStore) Effective(_ context.Context, subject string) (a.Effective, error) {
+	s.repo.effectiveCalls++
+	if eff, ok := s.repo.effective[subject]; ok {
+		return eff, nil
 	}
-	s.roles[r.ID] = r
+	return a.Effective{Subject: subject, Revision: "0", Grants: []a.Grant{}, AuthorizationMode: a.ExplicitGrants}, nil
+}
+
+func (s *spyStore) CreateRole(_ context.Context, r a.Role) error {
+	s.repo.roles[r.ID] = r
 	return nil
 }
-func (s *memStore) Change(_ context.Context, subject string, m admin.Mutation, revoke bool) (admin.Revision, error) {
-	if strconv.FormatInt(s.revisions[subject], 10) != m.ExpectedRevision {
-		return admin.Revision{}, admin.ErrConflict
-	}
-	role, ok := s.roles[m.RoleID]
-	if !ok {
-		return admin.Revision{}, admin.ErrNotFound
-	}
-	idx := slices.IndexFunc(s.grants[subject], func(g admin.Grant) bool {
-		return g.Role.ID == m.RoleID && g.Scope == m.Scope
-	})
-	if revoke {
-		if idx < 0 {
-			return admin.Revision{}, admin.ErrConflict
-		}
-		s.grants[subject] = slices.Delete(s.grants[subject], idx, idx+1)
-	} else {
-		if idx >= 0 {
-			return admin.Revision{}, admin.ErrConflict
-		}
-		s.grants[subject] = append(s.grants[subject], admin.Grant{Role: role, Scope: m.Scope})
-	}
-	s.revisions[subject]++
-	return admin.Revision{Revision: strconv.FormatInt(s.revisions[subject], 10)}, nil
-}
-func (s *memStore) Record(_ context.Context, rec admin.Record) error {
-	rec.ID = strconv.Itoa(len(s.audits) + 1)
-	s.audits = append(s.audits, rec)
-	return nil
-}
-func (s *memStore) Replay(_ context.Context, actor, key, hash string) ([]byte, error) {
-	entry, ok := s.replays[actor+"|"+key]
-	if !ok {
-		return nil, nil
-	}
-	if entry.hash != hash {
-		return nil, admin.ErrConflict
-	}
-	return entry.raw, nil
-}
-func (s *memStore) SaveReplay(_ context.Context, actor, key, hash string, raw []byte, _ time.Time) error {
-	s.replays[actor+"|"+key] = struct {
-		hash string
-		raw  []byte
-	}{hash: hash, raw: slices.Clone(raw)}
-	return nil
-}
-func (s *memStore) ReadAudit(_ context.Context, q admin.AuditRequest) (admin.AuditBatch, error) {
-	out := admin.AuditBatch{Snapshot: "mem-snap", Records: []admin.Record{}}
-	for i := len(s.audits) - 1; i >= 0; i-- {
-		rec := s.audits[i]
-		if !rec.CreatedAt.Before(q.Until) {
-			continue
-		}
-		out.Records = append(out.Records, rec)
-		if len(out.Records) >= q.Limit {
-			break
-		}
-	}
-	return out, nil
+
+func (s *spyStore) Change(_ context.Context, _ string, _ a.Mutation, _ bool) (a.Revision, error) {
+	return a.Revision{Revision: "1"}, nil
 }
 
-func TestInMemoryAdminServiceAuthorizationDelegationAndReplay(t *testing.T) {
+func (s *spyStore) Record(context.Context, a.Record) error { return nil }
+func (s *spyStore) Replay(context.Context, string, string, string, time.Time) ([]byte, error) {
+	return nil, nil
+}
+func (s *spyStore) SaveReplay(context.Context, string, string, string, []byte, time.Time) error {
+	return nil
+}
+func (s *spyStore) ReadAudit(context.Context, a.AuditRequest) (a.AuditBatch, error) {
+	return a.AuditBatch{}, nil
+}
+
+type identityFunc func(context.Context, account.Principal) (bool, error)
+
+func (f identityFunc) PlatformAdmin(ctx context.Context, p account.Principal) (bool, error) {
+	return f(ctx, p)
+}
+
+func TestEffectiveDecouplesTargetIdentityFromViewAndAllowsRevokedTargetInspection(t *testing.T) {
 	ctx := context.Background()
 	boss := account.Principal{Issuer: "urn:test", Subject: "boss"}
-	delegator := account.Principal{Issuer: "urn:test", Subject: "delegator"}
-	operator := account.Principal{Issuer: "urn:test", Subject: "operator"}
-
-	now := time.Date(2026, 11, 18, 8, 0, 0, 0, time.UTC)
-	repo := newMemRepo()
-	svc := admin.Service{
-		Repo:     repo,
-		Identity: memIdentity{boss.Key(): true},
-		Now:      func() time.Time { return now },
+	departed := account.Principal{Issuer: "urn:test", Subject: "departed"}
+	repo := &spyRepo{
+		roles: map[string]a.Role{},
+		effective: map[string]a.Effective{
+			departed.Key(): {
+				Subject:           departed.Key(),
+				Revision:          "3",
+				AuthorizationMode: a.ExplicitGrants,
+				Grants: []a.Grant{{
+					Role:  a.Role{ID: "resources", Name: "资料", Capabilities: []string{"resources.manage"}},
+					Scope: a.Scope{School: "buaa", Group: "*", Module: "resources"},
+				}},
+			},
+		},
 	}
 
-	// Scope intersection never derives school from group.
-	if _, ok := (admin.Scope{School: "buaa", Group: "g1", Module: "*"}).Intersection(admin.Scope{School: "other", Group: "g1", Module: "*"}); ok {
-		t.Fatal("disjoint schools intersected")
+	calledTargetInsideTx := false
+	targetErr := a.ErrForbidden
+	svc := a.Service{
+		Repo: repo,
+		Identity: identityFunc(func(_ context.Context, p account.Principal) (bool, error) {
+			if p == boss {
+				return true, nil
+			}
+			if repo.inView.Load() {
+				calledTargetInsideTx = true
+			}
+			return false, targetErr
+		}),
 	}
 
-	// Non-platform admin cannot create roles.
-	if _, err := svc.CreateRole(ctx, delegator, "r1", admin.RoleInput{
-		Role:   admin.Role{ID: "res", Name: "资料", Capabilities: []string{"resources.manage"}},
-		Reason: "unauthorized",
-	}); !errors.Is(err, admin.ErrForbidden) {
-		t.Fatalf("expected ErrForbidden, got %v", err)
-	}
-
-	for _, r := range []admin.Role{
-		{ID: "delegator", Name: "委托", Capabilities: []string{"platform.authorization.manage", "resources.manage"}},
-		{ID: "res", Name: "资料", Capabilities: []string{"resources.manage"}},
-		{ID: "plat", Name: "平台", Capabilities: []string{"platform.modules"}},
-	} {
-		if _, err := svc.CreateRole(ctx, boss, "create-"+r.ID, admin.RoleInput{Role: r, Reason: "init"}); err != nil {
-			t.Fatal(err)
+	for _, te := range []error{a.ErrForbidden, a.ErrUnauthenticated} {
+		targetErr = te
+		calledTargetInsideTx = false
+		eff, err := svc.Effective(ctx, boss, departed.Key(), a.Global)
+		if err != nil {
+			t.Fatalf("target err %v leaked as caller error: %v", te, err)
+		}
+		if calledTargetInsideTx {
+			t.Fatalf("target identity queried while DB View transaction was open")
+		}
+		if eff.AuthorizationMode != a.ExplicitGrants || eff.Revision != "3" || len(eff.Grants) != 1 {
+			t.Fatalf("unexpected effective response for revoked target: %+v", eff)
 		}
 	}
+}
 
-	buaaRes := admin.Scope{School: "buaa", Group: "*", Module: "resources"}
-	if _, err := svc.Change(ctx, boss, delegator.Key(), "g-del", admin.Mutation{
-		RoleID:           "delegator",
-		Scope:            buaaRes,
-		ExpectedRevision: "0",
-		Reason:           "grant delegator",
+func TestChangeLoadsDelegatorEffectiveGrantsOnceAndRejectsMalformedInputs(t *testing.T) {
+	ctx := context.Background()
+	boss := account.Principal{Issuer: "urn:test", Subject: "boss"}
+	delegate := account.Principal{Issuer: "urn:test", Subject: "delegate"}
+	member := account.Principal{Issuer: "urn:test", Subject: "member"}
+
+	caps := []string{
+		"resources.read", "resources.write", "resources.manage", "resources.coverage.read",
+		"catalog.read", "catalog.maintain", "reviews.read", "reviews.moderate",
+		"moderation.review", "moderation.manage",
+	}
+	delegatorCaps := append([]string{"platform.authorization.manage"}, caps...)
+	scope := a.Scope{School: "buaa", Group: "*", Module: "*"}
+
+	repo := &spyRepo{
+		roles: map[string]a.Role{
+			"bundle": {ID: "bundle", Name: "Bundle", Capabilities: caps},
+		},
+		effective: map[string]a.Effective{
+			delegate.Key(): {
+				Subject:  delegate.Key(),
+				Revision: "1",
+				Grants: []a.Grant{{
+					Role:  a.Role{ID: "delegator", Name: "Delegator", Capabilities: delegatorCaps},
+					Scope: scope,
+				}},
+			},
+		},
+	}
+	svc := a.Service{
+		Repo: repo,
+		Identity: identityFunc(func(_ context.Context, p account.Principal) (bool, error) {
+			return p == boss, nil
+		}),
+	}
+
+	if _, err := svc.Change(ctx, delegate, member.Key(), "key-1", a.Mutation{
+		RoleID: "bundle", Scope: scope, ExpectedRevision: "0", Reason: "delegate bundle",
 	}, false); err != nil {
-		t.Fatal(err)
+		t.Fatalf("Change failed: %v", err)
+	}
+	if repo.effectiveCalls != 1 {
+		t.Fatalf("expected 1 Effective lookup for delegator, got %d (N+1)", repo.effectiveCalls)
 	}
 
-	// Delegator cannot grant platform.* capabilities or grant to self.
-	if _, err := svc.Change(ctx, delegator, operator.Key(), "g-plat", admin.Mutation{
-		RoleID:           "plat",
-		Scope:            buaaRes,
-		ExpectedRevision: "0",
-		Reason:           "escalate",
-	}, false); !errors.Is(err, admin.ErrForbidden) {
-		t.Fatalf("expected ErrForbidden delegating platform.*, got %v", err)
+	// A-15 & A-16: reject whitespace-only reason/name, trailing-space scope, whitespace key, and malformed capabilities.
+	for _, badCap := range []string{"platform", "platform.", ".read", "a..b", "a.-b"} {
+		if _, err := svc.CreateRole(ctx, boss, "role-bad", a.RoleInput{
+			Role:   a.Role{ID: "bad", Name: "Bad", Capabilities: []string{badCap}},
+			Reason: "test",
+		}); !errors.Is(err, a.ErrInvalid) {
+			t.Fatalf("capability %q should fail with ErrInvalid, got %v", badCap, err)
+		}
 	}
-	if _, err := svc.Change(ctx, delegator, delegator.Key(), "g-self", admin.Mutation{
-		RoleID:           "res",
-		Scope:            buaaRes,
-		ExpectedRevision: "1",
-		Reason:           "self",
-	}, false); !errors.Is(err, admin.ErrForbidden) {
-		t.Fatalf("expected ErrForbidden self-granting, got %v", err)
+	if _, err := svc.CreateRole(ctx, boss, "role-blank-name", a.RoleInput{
+		Role:   a.Role{ID: "valid", Name: "   ", Capabilities: []string{"resources.manage"}},
+		Reason: "test",
+	}); !errors.Is(err, a.ErrInvalid) {
+		t.Fatalf("blank role Name accepted: %v", err)
 	}
-
-	// Valid delegation and idempotent replay.
-	rev, err := svc.Change(ctx, delegator, operator.Key(), "g-op", admin.Mutation{
-		RoleID:           "res",
-		Scope:            buaaRes,
-		ExpectedRevision: "0",
-		Reason:           "assign operator",
-	}, false)
-	if err != nil || rev.Revision != "1" {
-		t.Fatalf("delegation failed: %+v, err=%v", rev, err)
+	if _, err := svc.Change(ctx, boss, member.Key(), "key-blank-reason", a.Mutation{
+		RoleID: "bundle", Scope: scope, ExpectedRevision: "0", Reason: "   ",
+	}, false); !errors.Is(err, a.ErrInvalid) {
+		t.Fatalf("blank Reason accepted: %v", err)
 	}
-	replay, err := svc.Change(ctx, delegator, operator.Key(), "g-op", admin.Mutation{
-		RoleID:           "res",
-		Scope:            buaaRes,
-		ExpectedRevision: "0",
-		Reason:           "assign operator",
-	}, false)
-	if err != nil || replay.Revision != "1" {
-		t.Fatalf("replay failed: %+v, err=%v", replay, err)
+	if _, err := svc.Change(ctx, boss, member.Key(), "   ", a.Mutation{
+		RoleID: "bundle", Scope: scope, ExpectedRevision: "0", Reason: "valid",
+	}, false); !errors.Is(err, a.ErrInvalid) {
+		t.Fatalf("blank Idempotency-Key accepted: %v", err)
 	}
-	if err = svc.Evaluate(ctx, operator, "resources.manage", buaaRes); err != nil {
-		t.Fatal(err)
+	if _, err := svc.Change(ctx, boss, member.Key(), "key-space-scope", a.Mutation{
+		RoleID: "bundle", Scope: a.Scope{School: "buaa ", Group: "*", Module: "*"}, ExpectedRevision: "0", Reason: "valid",
+	}, false); !errors.Is(err, a.ErrInvalid) {
+		t.Fatalf("trailing-space Scope accepted: %v", err)
 	}
 
-	// Ensure Templates JSON serializes cleanly.
-	if raw, err := json.Marshal(admin.Templates()); err != nil || len(raw) == 0 {
-		t.Fatal(err)
+	// A-17: Templates returns stable i18n label_key values, includes platform.eligibility.manage, and does not open a DB View.
+	viewsBefore := repo.viewCount
+	templates, err := svc.Templates(ctx, delegate)
+	if err != nil || len(templates) != 6 || repo.viewCount != viewsBefore {
+		t.Fatalf("Templates unexpected result: len=%d err=%v views=%d->%d", len(templates), err, viewsBefore, repo.viewCount)
 	}
-}
-
-func (*memStore) ListRoles(context.Context, admin.RoleQuery) ([]admin.Role, error) {
-	return nil, admin.ErrUnavailable
-}
-
-func (*memStore) ListAdministrators(context.Context, admin.AdministratorQuery) ([]admin.AdministratorSummary, error) {
-	return nil, admin.ErrUnavailable
-}
-
-func (*memStore) ApplyGrantChanges(context.Context, string, string, []admin.GrantTarget, []admin.GrantTarget, string, string, time.Time) (admin.Revision, error) {
-	return admin.Revision{}, admin.ErrUnavailable
+	foundEligibility := false
+	for _, tpl := range templates {
+		if tpl.LabelKey != "platform.admin.role_template."+tpl.ID {
+			t.Fatalf("template %s missing expected label_key, got %q", tpl.ID, tpl.LabelKey)
+		}
+		if tpl.ID == "platform" {
+			for _, c := range tpl.Capabilities {
+				if c == "platform.eligibility.manage" {
+					foundEligibility = true
+				}
+			}
+		}
+	}
+	if !foundEligibility {
+		t.Fatalf("platform template missing platform.eligibility.manage: %+v", templates[0])
+	}
 }

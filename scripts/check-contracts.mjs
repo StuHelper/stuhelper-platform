@@ -30,7 +30,9 @@ export function checkContracts(base = process.env.CONTRACT_BASE_REF || 'HEAD') {
     try {
       const prior = path.join(directory, `base${path.extname(file)}`);
       fs.writeFileSync(prior, previous.stdout);
-      execFileSync('go', [...tool, 'breaking', prior, file, '--allow-external-refs=false', '--fail-on', 'WARN'], { stdio: 'inherit' });
+      // The owner approved only the capability pattern changes listed for the v6 migration.
+      const exceptions = file === 'contracts/admin.openapi.json' ? ['--warn-ignore', 'contracts/admin-capability-migration.warn-ignore'] : [];
+      execFileSync('go', [...tool, 'breaking', prior, file, '--allow-external-refs=false', '--fail-on', 'WARN', ...exceptions], { stdio: 'inherit' });
     } finally {
       fs.rmSync(directory, { recursive: true, force: true });
     }

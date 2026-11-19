@@ -400,15 +400,19 @@ func (s *adminStore) Record(ctx context.Context, r a.Record) error {
 	_, e := s.tx.ExecContext(ctx, `INSERT INTO platform.audit(actor,action,target,data,created_at,school,group_id,module,reason,result) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, r.Actor, r.Action, r.Target, raw, r.CreatedAt, r.Scope.School, r.Scope.Group, r.Scope.Module, r.Reason, r.Result)
 	return adminError(e)
 }
-func (s *adminStore) Replay(ctx context.Context, actor, key, hash string) ([]byte, error) {
+func (s *adminStore) Replay(ctx context.Context, actor, key, hash string, now time.Time) ([]byte, error) {
 	var previous string
 	var b []byte
-	e := s.tx.QueryRowContext(ctx, `SELECT digest,result FROM platform.admin_requests WHERE actor=$1 AND key=$2`, actor, key).Scan(&previous, &b)
+	var at time.Time
+	e := s.tx.QueryRowContext(ctx, `SELECT digest,result,created_at FROM platform.admin_requests WHERE actor=$1 AND key=$2`, actor, key).Scan(&previous, &b, &at)
 	if errors.Is(e, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if e != nil {
 		return nil, adminError(e)
+	}
+	if !now.Before(at.Add(24 * time.Hour)) {
+		return nil, nil
 	}
 	if previous != hash {
 		return nil, a.ErrConflict
@@ -416,6 +420,9 @@ func (s *adminStore) Replay(ctx context.Context, actor, key, hash string) ([]byt
 	return b, nil
 }
 func (s *adminStore) SaveReplay(ctx context.Context, actor, key, hash string, b []byte, at time.Time) error {
+	if _, e := s.tx.ExecContext(ctx, `DELETE FROM platform.admin_requests WHERE actor=$1 AND key=$2 AND created_at <= $3`, actor, key, at.Add(-24*time.Hour)); e != nil {
+		return adminError(e)
+	}
 	_, e := s.tx.ExecContext(ctx, `INSERT INTO platform.admin_requests(actor,key,digest,result,created_at) VALUES($1,$2,$3,$4,$5)`, actor, key, hash, b, at)
 	return adminError(e)
 }

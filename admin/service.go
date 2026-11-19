@@ -46,6 +46,14 @@ func (s Service) identity(ctx context.Context, p account.Principal) (bool, error
 	}
 	return b, nil
 }
+func grantsAllow(grants []Grant, cap string, scope Scope) bool {
+	for _, g := range grants {
+		if slices.Contains(g.Role.Capabilities, cap) && g.Scope.Contains(scope) {
+			return true
+		}
+	}
+	return false
+}
 func allowed(ctx context.Context, st Store, p account.Principal, platform bool, cap string, scope Scope) error {
 	// Trusted platform identity grants all capabilities and object scopes.
 	if platform {
@@ -55,12 +63,20 @@ func allowed(ctx context.Context, st Store, p account.Principal, platform bool, 
 	if e != nil {
 		return e
 	}
-	for _, g := range effective.Grants {
-		if slices.Contains(g.Role.Capabilities, cap) && g.Scope.Contains(scope) {
-			return nil
-		}
+	if grantsAllow(effective.Grants, cap, scope) {
+		return nil
 	}
 	return ErrForbidden
+}
+
+// Templates returns non-sensitive role suggestions after verifying the caller's live identity.
+func (s Service) Templates(ctx context.Context, p account.Principal) ([]Role, error) {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	if _, err := s.identity(ctx, p); err != nil {
+		return nil, err
+	}
+	return Templates(), nil
 }
 
 // Evaluate accepts an authenticated, trusted principal and the object's actual
@@ -68,7 +84,7 @@ func allowed(ctx context.Context, st Store, p account.Principal, platform bool, 
 // Every call checks current identity. Non-platform administrators also read current
 // grants; trusted platform administrators need no explicit grant for any capability.
 func (s Service) Evaluate(ctx context.Context, p account.Principal, cap string, scope Scope) error {
-	if !identifier.MatchString(cap) || !strings.Contains(cap, ".") || !scope.Valid() {
+	if !validCapability(cap) || !scope.Valid() {
 		return ErrInvalid
 	}
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
@@ -113,38 +129,45 @@ func (s Service) Effective(ctx context.Context, p account.Principal, subject str
 	if err != nil {
 		return out, err
 	}
+	var all Effective
 	err = s.Repo.View(ctx, func(st Store) error {
 		if p.Key() != subject {
 			if e := allowed(ctx, st, p, platform, "platform.authorization.read", scope); e != nil {
 				return e
 			}
 		}
-		all, e := st.Effective(ctx, subject)
-		if e != nil {
-			return e
-		}
-		// The queried account's identity, rather than the caller's, determines
-		// the effective authorization mode. Do not query it before permission checks.
-		targetPlatform := platform
-		if p.Key() != subject {
-			targetPlatform, e = s.identity(ctx, target)
-			if e != nil {
-				return e
-			}
-		}
-		out = Effective{Subject: subject, Revision: all.Revision, Grants: []Grant{}, AuthorizationMode: ExplicitGrants}
-		if targetPlatform {
-			out.AuthorizationMode = PlatformAdminAll
-		}
-		for _, g := range all.Grants {
-			if intersection, ok := g.Scope.Intersection(scope); ok {
-				g.Scope = intersection
-				out.Grants = append(out.Grants, g)
-			}
-		}
-		return nil
+		var e error
+		all, e = st.Effective(ctx, subject)
+		return e
 	})
-	return
+	if err != nil {
+		return out, err
+	}
+	// Query target identity only after the caller's read authorization passed and the
+	// database view transaction released its connection. A revoked or inactive target
+	// is not an active platform administrator, never a 401/403 against the caller.
+	targetPlatform := platform
+	if p.Key() != subject {
+		targetPlatform, err = s.identity(ctx, target)
+		if errors.Is(err, ErrForbidden) || errors.Is(err, ErrUnauthenticated) {
+			targetPlatform = false
+			err = nil
+		}
+		if err != nil {
+			return out, err
+		}
+	}
+	out = Effective{Subject: subject, Revision: all.Revision, Grants: []Grant{}, AuthorizationMode: ExplicitGrants}
+	if targetPlatform {
+		out.AuthorizationMode = PlatformAdminAll
+	}
+	for _, g := range all.Grants {
+		if intersection, ok := g.Scope.Intersection(scope); ok {
+			g.Scope = intersection
+			out.Grants = append(out.Grants, g)
+		}
+	}
+	return out, nil
 }
 func digest(v any) string {
 	b, _ := json.Marshal(v)
@@ -153,9 +176,10 @@ func digest(v any) string {
 }
 func (s Service) CreateRole(ctx context.Context, p account.Principal, key string, in RoleInput) (out Role, err error) {
 	in.Role.CreatedAt = nil
-	if !validRole(in.Role) || !clean(in.Reason, 512) || !clean(key, 128) {
+	if !validRole(in.Role) || !nonBlank(in.Reason, 512) || !validKey(key) {
 		return out, ErrInvalid
 	}
+	in.Role.LabelKey = ""
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	platform, err := s.identity(ctx, p)
@@ -166,15 +190,15 @@ func (s Service) CreateRole(ctx context.Context, p account.Principal, key string
 		return out, ErrForbidden
 	}
 	err = s.Repo.Write(ctx, func(st Store) error {
+		at := s.now()
 		hash := digest([]any{"role.create", in})
-		b, e := st.Replay(ctx, p.Key(), key, hash)
+		b, e := st.Replay(ctx, p.Key(), key, hash, at)
 		if e != nil {
 			return e
 		}
 		if b != nil {
 			return json.Unmarshal(b, &out)
 		}
-		at := s.now()
 		created := in.Role
 		created.CreatedAt = &at
 		if e = st.CreateRole(ctx, created); e != nil {
@@ -190,7 +214,7 @@ func (s Service) CreateRole(ctx context.Context, p account.Principal, key string
 	return
 }
 func (s Service) Change(ctx context.Context, p account.Principal, subject, key string, in Mutation, revoke bool) (out Revision, err error) {
-	if _, e := account.Parse(subject); e != nil || !identifier.MatchString(in.RoleID) || !in.Scope.Valid() || !clean(in.Reason, 512) || !clean(key, 128) {
+	if _, e := account.Parse(subject); e != nil || !identifier.MatchString(in.RoleID) || !in.Scope.Valid() || !nonBlank(in.Reason, 512) || !validKey(key) {
 		return out, ErrInvalid
 	}
 	n, e := strconv.ParseInt(in.ExpectedRevision, 10, 64)
@@ -207,26 +231,30 @@ func (s Service) Change(ctx context.Context, p account.Principal, subject, key s
 		return out, ErrForbidden
 	}
 	err = s.Repo.Write(ctx, func(st Store) error {
-		if e := allowed(ctx, st, p, platform, "platform.authorization.manage", in.Scope); e != nil {
-			return e
+		var caller Effective
+		if !platform {
+			var e error
+			caller, e = st.Effective(ctx, p.Key())
+			if e != nil {
+				return e
+			}
+			if !grantsAllow(caller.Grants, "platform.authorization.manage", in.Scope) {
+				return ErrForbidden
+			}
 		}
 		role, e := st.Role(ctx, in.RoleID)
 		if e != nil {
 			return e
 		}
 		for _, cap := range role.Capabilities {
-			if strings.HasPrefix(cap, "platform.") && !platform {
+			// Delegation cannot exceed the grantor's current capabilities or scope.
+			if !platform && (strings.HasPrefix(cap, "platform.") || !grantsAllow(caller.Grants, cap, in.Scope)) {
 				return ErrForbidden
 			}
-			// Delegation cannot exceed the grantor's current capabilities or scope.
-			if !platform {
-				if e = allowed(ctx, st, p, false, cap, in.Scope); e != nil {
-					return e
-				}
-			}
 		}
+		at := s.now()
 		hash := digest([]any{subject, in, revoke})
-		b, e := st.Replay(ctx, p.Key(), key, hash)
+		b, e := st.Replay(ctx, p.Key(), key, hash, at)
 		if e != nil {
 			return e
 		}
@@ -241,7 +269,6 @@ func (s Service) Change(ctx context.Context, p account.Principal, subject, key s
 		if revoke {
 			action = "role.revoke"
 		}
-		at := s.now()
 		if e = st.Record(ctx, Record{Source: "platform", Actor: p.Key(), Action: action, Target: subject, RoleID: in.RoleID, Revision: out.Revision, Scope: in.Scope, Reason: in.Reason, Result: "success", CreatedAt: at}); e != nil {
 			return e
 		}
