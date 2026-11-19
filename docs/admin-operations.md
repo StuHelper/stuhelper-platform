@@ -1,14 +1,14 @@
 ---
 type: development
 status: InReview
-updated: 2026-11-19
+updated: 2026-11-20
 ---
 
 # 管理角色与操作记录
 
 ## 实现范围
 
-本模块实现角色模板、不可变角色定义、学校／群／业务模块授权、有效授权求值，以及跨模块操作记录汇总查询。依据为 stuhelper-next 的 admin-operations、platform-architecture 和 data-retention 规格。
+本模块实现角色模板、不可变角色定义、学校／群／业务模块授权、有效授权求值，以及跨模块操作记录汇总查询。依据为 stuhelper 的 admin-operations、platform-architecture 和 data-retention 规格。
 
 platform 拥有统一操作记录查询。各业务模块继续拥有原始审计，并与业务写入同事务提交。platform 通过公开提供方接口读取脱敏摘要，不直接访问其他模块数据库，也不复制认证材料或交易载荷。
 
