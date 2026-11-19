@@ -240,3 +240,43 @@ func TestUnknownAPIRouteAndMethodMismatchReturnJSONProblem(t *testing.T) {
 		t.Fatalf("unexpected 405 body: %s (X-Request-ID=%s)", w405.Body.String(), reqID405)
 	}
 }
+
+func TestExplicitHeadRouteUsesItsOwnProtectedHandler(t *testing.T) {
+	meta := Route{Method: http.MethodHead, Path: "/api/v1/example/content", Module: "example", Capability: "example.read", Access: Protected}
+	get := meta
+	get.Method = http.MethodGet
+	get.Handler = http.HandlerFunc(func(http.ResponseWriter, *http.Request) { t.Error("HEAD ran the content handler") })
+	for _, tt := range []struct {
+		name  string
+		authn Authenticator
+		authz Authorizer
+		want  int
+	}{
+		{"anonymous", authenticator{err: ErrUnauthenticated}, authorizer{}, 401},
+		{"revoked", authenticator{}, authorizer{ErrForbidden}, 403},
+		{"authorized", authenticator{}, authorizer{}, 200},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			called := false
+			meta.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				called = true
+				if _, ok := Identity(r.Context()); !ok {
+					t.Fatal("missing authenticated identity")
+				}
+				w.Header().Set("ETag", "fixture-revision")
+			})
+			h, err := NewHandler(registry(t, true), []Route{get, meta}, tt.authn, tt.authz, slog.New(slog.NewTextHandler(io.Discard, nil)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, httptest.NewRequest(http.MethodHead, meta.Path, nil))
+			if w.Code != tt.want || called != (tt.want == 200) {
+				t.Fatal("unexpected authorization or handler", w.Code, called)
+			}
+			if called && (w.Header().Get("ETag") != "fixture-revision" || w.Body.Len() != 0) {
+				t.Fatal("invalid metadata response")
+			}
+		})
+	}
+}
