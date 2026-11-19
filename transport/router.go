@@ -140,7 +140,7 @@ func NewHandler(registry *module.Registry, routes []Route, authn Authenticator, 
 			return nil, errors.New("invalid module HTTP route")
 		}
 		switch route.Method {
-		case "GET", "POST", "PUT", "PATCH", "DELETE":
+		case "GET", "HEAD", "POST", "PUT", "PATCH", "DELETE":
 		default:
 			return nil, errors.New("invalid HTTP method")
 		}
