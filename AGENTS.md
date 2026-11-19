@@ -1,6 +1,6 @@
 # 工程约定
 
-- 本仓库是 StuHelper 按业务模块拆分的一部分。架构与业务边界以 https://github.com/StuHelper/stuhelper-next 为准。
+- 本仓库是 StuHelper 按业务模块拆分的一部分。架构与业务边界以 https://github.com/StuHelper/stuhelper 为准。
 - 普通变更从最新 origin/develop 创建专用短期分支和独立 worktree，通过 PR squash 到 develop。发布走 develop 到 main 的 merge commit；tag、镜像发行与生产晋级需要 owner 明确授权。
 - 普通检查使用 ubuntu-26.04。Docker/OCI 构建和 BJ1 Registry 操作固定使用 StuHelper 自建 runner。不修改其他仓库、生产数据或运行配置来完成普通开发任务。
 - GitHub Actions 与部署镜像使用明确版本 tag。摘要与源码提交用于核验和追溯。独立检查不使用 GitHub Actions cache 或 artifacts。新增共享缓存时遵循架构仓库的 CI 规格。
@@ -10,7 +10,7 @@
 - Docker 测试只使用任务专属资源，完成或失败后清理本任务创建的容器、无用镜像及缓存，不做全局清理。
 - 保留其他任务的未提交修改。当前只搭框架，不实现业务；原生端与社区模块搁置。
 
-任务工作树统一放在 `stuhelper-next/workspace/worktrees/<任务>/<仓库名>`。文档直接维护当前状态，术语和国际化遵循架构仓库的统一规格。
+任务工作树统一放在 `workspace/worktrees/<任务>/<仓库名>`。文档直接维护当前状态，术语和国际化遵循架构仓库的统一规格。
 
 ## 沟通与回复
 
@@ -21,4 +21,4 @@
 * 回复先给结果，再给必要证据与剩余事项。检查通过、真实账号验收、发行和部署分别报告。失败先修复并重跑原检查，再验证受影响阶段。
 * 长期文档使用相关写作技能。已明确的授权直接沿用，待确认的产品选择保持 InReview。工具明确进入 Goal Mode 时减少进度沟通，其余情况按正常协作执行。
 
-公共测试、工具链升级、文档编号、许可证和 PR 约定遵循[架构仓库工程约定](https://github.com/StuHelper/stuhelper-next/blob/develop/AGENTS.md)。本仓库使用固定版本的共享工程工具执行检查。
+公共测试、工具链升级、文档编号、许可证和 PR 约定遵循[架构仓库工程约定](https://github.com/StuHelper/stuhelper/blob/develop/AGENTS.md)。本仓库使用固定版本的共享工程工具执行检查。

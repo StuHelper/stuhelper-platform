@@ -41,7 +41,7 @@ make check-generated
 
 使用 oapi-codegen v2.8.0 和 openapi-typescript v7.13.0，生成文件禁止手改。Web/Admin 独立保存生成快照，跨仓库检查由架构仓库负责。正式模块依赖固定已发布版本。私有 stuhelper-backend 承载产品 main 入口；本仓库的 examples/server 用于公开检查和演示。
 
-架构、规格与工作区入口见 [StuHelper Next](https://github.com/StuHelper/stuhelper-next)。
+架构、规格与工作区入口见 [StuHelper](https://github.com/StuHelper/stuhelper)。
 
 modulehistory 提供独立于启用状态的安装事实接口。PostgreSQL 的 platform schema 保存资格规则、安装历史、幂等响应和独立审计。初始化只记录经核实从未安装的模块，不能覆盖已有事实；安装记录单向更新。记录缺失或数据库故障时按未知处理。
 资格规则缓存最长 5 秒、最多 4,096 项。本进程修改后立即失效，包括提交结果不明的失败；其他实例在 5 秒内失效。过期缓存读取失败时返回不可用，不使用旧值。安装历史每次读取数据库，不缓存从未安装状态。
