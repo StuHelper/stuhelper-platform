@@ -1,62 +1,68 @@
 # StuHelper Platform
 
-StuHelper 公共 Go 框架。当前提供模块依赖验证、Fx 生命周期、HTTP 访问边界、远程模块接口核对和 OpenAPI 类型生成。资格规则与模块安装历史使用独立 PostgreSQL schema。具体业务和真实身份适配器由业务模块提供。
+<!-- updated: 2026-11-21 -->
 
-## 本地运行
+StuHelper 的公共 Go 框架，提供模块装配与可用性判断、HTTP 路由、动作资格、安装历史、管理员授权和操作记录汇总。产品入口由 stuhelper-backend 装配，业务模块与身份提供方通过公开接口接入。
 
-需要 Go 1.27.3 与 Node.js 24.22.1。
+## 本地运行与检查
+
+使用 Go 1.27.3、Node.js 24.22.1、pnpm 10.33.4 和 actionlint 1.7.12。完整检查还需要本机 PostgreSQL 工具。精确版本以仓库声明及[统一工具链清单](https://github.com/StuHelper/stuhelper/blob/develop/architecture/toolchains.yaml)为准。
 
 ```bash
 make setup
-bash scripts/check-with-postgres.sh
 make run
 ```
 
-默认监听 127.0.0.1:8080，可通过 STUHELPER_LISTEN 修改。STUHELPER_MODULES 默认 platform。公开示例尚未安装其他业务模块，未知模块配置会失败。
+`make run` 启动 `examples/server`。监听地址默认 `127.0.0.1:8080`，可用 `STUHELPER_LISTEN` 配置。启用模块通过 `STUHELPER_MODULES` 指定，公开示例默认只有 `platform`。配置未知模块会导致启动失败。
 
-`/healthz` 检查进程存活，`/readyz` 检查显式声明的关键模块及其必需依赖，`/api/v1/system/capabilities` 返回可用能力。能力列表不表示用户获得权限。管理接口在身份适配器接入前返回 identity_unavailable，认证拒绝返回 permission_denied。
+`/healthz` 检查进程存活，`/readyz` 检查显式标为关键的模块及其必需依赖，`/api/v1/system/capabilities` 返回可用能力。能力列表供客户端判断功能可用性。访问权限在服务端逐次检查。
 
-单次请求共享模块可用性判定，`postgres.Repository.Ready` 提供 1 秒单飞健康快照。停机时为 HTTP 排空划分独立子预算，确保业务模块 `OnStop` 正常执行。
-
-## 模块开发
-
-module.Definition 声明标识、构建版本、接口主版本、必需与可选依赖、能力级依赖和生命周期。application.Modules 接收模块及其路由，application.New 统一组装。接口示例位于 examples/extension，可单独执行：
+公开示例未注入身份和授权适配器，访问受保护的 `/api/v1/admin/modules` 返回 503 `identity_unavailable`。已接入身份时，通用路由分别返回 401 `authentication_required`、403 `permission_denied` 或 503 依赖故障。
 
 ```bash
-go run ./examples/extension
+bash scripts/check-with-postgres.sh
 ```
 
-该示例只返回合成状态，不包含在默认示例中。模块启停在首期通过配置与重启生效，没有上传代码或在线热加载入口。模块拥有自己的数据，依赖方不能直接读写其他模块的表。
+检查脚本创建仅监听 Unix 套接字的临时 PostgreSQL 集群，自动设置 `STUHELPER_PLATFORM_TEST_DSN`、执行 `make check` 并清理集群。非 Debian 系统可以用 `STUHELPER_TEST_PG_BIN` 指定 PostgreSQL 程序目录。直接运行 `make check` 需要调用者提供隔离测试库。
 
-module.Remote.Definition 的通用连接实现位于 module/remote.go。它核对固定端点的接口版本。后台探测保存短时健康状态，暂时不可达时组合仍可启动，相关能力暂停。配置或已识别的协议错误使启动失败。远程连接按实际部署需要使用；私有业务模块也可静态编译进 backend，真实身份和业务接口在所属仓库开发。
+`make check` 默认使用 `GOWORK=off`，检查生成一致性、仓库规则、OpenAPI 及其兼容性、导入边界、脚本单测和 Go 格式，随后执行 vet、竞态测试、构建和工作流检查。场景与测试函数登记在 [module.yaml](module.yaml)。
 
-## 契约
+`make test` 仅运行 Go 竞态测试，也需要隔离测试库。契约兼容性默认与 `HEAD` 比较，可设置 `CONTRACT_BASE_REF=origin/develop` 检查候选变更。
 
-公共接口源文件是 contracts/platform.openapi.yaml，远程模块握手约定是 contracts/module.openapi.yaml。
+## 模块装配
+
+`module.Definition` 声明模块标识、版本、接口主版本、必需依赖、可选依赖、能力级依赖和生命周期。`application.New` 接收模块、路由和访问控制适配器并通过 Fx 装配。模块启停在修改配置并重启后生效。
+
+```bash
+GOWORK=off go run ./examples/extension
+```
+
+该示例额外注册一条返回合成状态的公开路由。通用 HTTP 路由共享单次请求的可用性判断并生成请求 ID，支持带自身访问控制的显式 HEAD 路由。停机时 HTTP 使用独立排空预算，为模块停止钩子留出时间。
+
+`module.Remote.Definition` 通过 `GET /internal/v1/module` 校验模块标识、接口主版本和约定能力，后台探测维护短期可用性状态。开始探测时遇到暂时故障，宿主仍可启动，相关能力暂停。启动探测识别到配置或协议错误时，组合启动失败。
+
+## 契约与持久化
+
+| 契约 | 用途 |
+| --- | --- |
+| [platform.openapi.yaml](contracts/platform.openapi.yaml) | 健康、能力和模块状态 |
+| [module.openapi.yaml](contracts/module.openapi.yaml) | 远程模块握手 |
+| [eligibility.openapi.json](contracts/eligibility.openapi.json) | 动作资格规则、学校矩阵、覆盖重置和用户预检 |
+| [admin.openapi.json](contracts/admin.openapi.json) | 管理角色、授权和操作记录 |
 
 ```bash
 make generate
 make check-generated
 ```
 
-使用 oapi-codegen v2.8.0 和 openapi-typescript v7.13.0，生成文件禁止手改。Web/Admin 独立保存生成快照，跨仓库检查由架构仓库负责。正式模块依赖固定已发布版本。私有 stuhelper-backend 承载产品 main 入口；本仓库的 examples/server 用于公开检查和演示。
+生成脚本使用 oapi-codegen 和 openapi-typescript。接口变更先修改契约，再生成 Go 与 TypeScript SDK。Web 和 Admin 各自在快照中记录所用契约版本与提供方提交。产品依赖与生产组合由正式发行记录固定。详见[根仓发行](https://github.com/StuHelper/stuhelper/releases)。
 
-架构、规格与工作区入口见 [StuHelper](https://github.com/StuHelper/stuhelper)。
+`postgres` 在独立的 `platform` schema 保存资格规则、安装事实、审计和幂等回执。迁移身份与运行身份分开。生产宿主通过数据库就绪检查后提供流量。仓库就绪检查合并并发请求，默认缓存成功结果 1 秒。
 
-modulehistory 提供独立于启用状态的安装事实接口。PostgreSQL 的 platform schema 保存资格规则、安装历史、幂等响应和独立审计。初始化只记录经核实从未安装的模块，不能覆盖已有事实；安装记录单向更新。记录缺失或数据库故障时按未知处理。
-资格规则缓存最长 5 秒、最多 4,096 项。本进程修改后立即失效，包括提交结果不明的失败；其他实例在 5 秒内失效。过期缓存读取失败时返回不可用，不使用旧值。安装历史每次读取数据库，不缓存从未安装状态。
+`eligibility` 以已验证的登录账号和调用方提供的业务事实求值。资料购买和会员购买分别配置，默认都要求校园资格，调整购买条件时下载规则和已有权益各自按原规则处理。只有 `publish_course` 支持本人选课条件。
 
-审计独立保存 12 个月，幂等响应保存 24 小时。Cleanup 每轮最多删除 100 条审计、100 条资格响应、100 条授权响应和 100 条过期快照，限时 5 秒；RetentionStatus 查询到期积压与最早过期时间，RetentionCleaner 可接入 Fx 周期执行。当前配置和安装事实随部署数据保存。
+资格配置来源依次为学校覆盖、全站配置和初始默认值。规则缓存最多 4,096 项，有效期最长 5 秒。当前进程写入或重置后会使缓存失效，读取失败时返回错误。
 
-运行身份只获得 platform schema 的 USAGE、表 SELECT/INSERT/UPDATE/DELETE 和序列 USAGE；audit、eligibility_requests 与 admin_requests 禁止 UPDATE，admin_roles 禁止 UPDATE 和 DELETE。迁移身份单独管理。make check 必须提供隔离的 STUHELPER_PLATFORM_TEST_DSN，CI 自动创建临时 PostgreSQL 集群。
+安装事实独立于模块启停。经核实从未安装的模块可初始化为从未安装，安装事实只向已安装状态推进。每次都从数据库读取，记录缺失或读取失败时按未知处理。
 
-
-## 管理角色与操作记录
-
-admin 提供不可变角色定义、学校／群／业务模块授权、即时授权求值和跨模块操作记录汇总查询。接口为 contracts/admin.openapi.json，公开求值入口为 admin.Service.Evaluate。角色模板不自动授予能力，platform 内置自身审计提供方，其他模块经公开接口接入；响应列出已查询和缺失模块。
-
-宿主通过 admin/httpapi.Handler.Register 装配路由，并提供当前身份及会话／CSRF 校验。公开示例未装配管理员身份。权限、数据库配置、AO 场景及 backend 后续接入步骤见[管理角色实现说明](docs/admin-operations.md)。
-
-资格动作 resources.purchase 与 membership.purchase 默认要求 campus_eligibility，登录由调用方已验证身份保证。两个动作独立配置全站规则与学校覆盖，购买条件调整不改变下载规则或既有权益。学校规则矩阵读取、覆盖恢复与用户侧动作预检契约由 eligibility OpenAPI 0.3.0 与生成 SDK 描述。
-
-仅 publish_course 支持配置 course_enrollment，其余动作仅允许已接入的通用条件。Admission 缺少规则源时直接返回不可用。
+管理员授权、审计留存、宿主接入和验证范围见[管理角色与操作记录](docs/admin-operations.md)。项目级设计、规格与工作区说明见[StuHelper 文档导航](https://github.com/StuHelper/stuhelper/blob/develop/docs/README.md)。
