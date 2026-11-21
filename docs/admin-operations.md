@@ -1,7 +1,7 @@
 ---
 type: development
 status: InReview
-updated: 2026-11-21
+updated: 2026-11-22
 ---
 
 # 管理角色与操作记录
@@ -19,6 +19,10 @@ Platform 提供角色模板、不可变角色定义、学校／群／业务模�
 管理接口和所属业务 Service 从可信认证结果取得 `account.Principal`。业务 Service 将对象的真实学校、群和模块范围传入 `admin.Service.Evaluate`。服务端按当前规则检查每次操作，业务模块继续负责对象归属、资格和字段权限。
 
 StuHelper v0.1.31 的生产组合包含 Platform v0.2.1、Backend v0.1.46 与 Admin v0.1.11。Backend 注入当前会话与 Casdoor 账号身份，装配角色、授权和操作记录接口。已装配的业务模块通过所属查询接口接入汇总。[根仓发行](https://github.com/StuHelper/stuhelper/releases/tag/v0.1.31)
+
+Backend develop 使用当前会话、`content_school_id`、生效资格规则和本人事实装配 `GET /api/v1/platform/eligibility-check`。普通登录用户可预检所属站点学校的动作。匿名请求返回 401，跨校及账号被拒绝的请求返回 403。[Backend 宿主装配](https://github.com/StuHelper/stuhelper-backend/pull/164)
+
+预检逐项返回满足、缺失和暂不可用的条件。缺少课程上下文时，选课条件标为暂不可用。业务端仍按当前事实和目标检查每次实际操作。
 
 Admin 的角色管理页支持创建角色、查询有效授权、逐条授予与撤销，并标示平台管理员拥有全部能力。操作记录页支持来源、操作者、目标、动作与时间筛选，提示缺失模块。[Admin 访问控制页面](https://github.com/StuHelper/stuhelper-admin/tree/v0.1.11/apps/web-antd/src/features/access)
 
@@ -88,7 +92,7 @@ Backend 应将应参与但暂不可用的模块显式注册为缺失提供方。
 | AO-05、PLAT-ADMIN-ALL-01 | 平台管理员敏感能力、跨范围委托和目标身份变更 |
 | AO-06、PLAT-AUDIT-01 | 稳定翻页、延迟提交、失效与清理、提供方异常和缺失响应 |
 | PLAT-ADMIN-01 | 角色能力名迁移、身份查询、授权审计事务和数据库隔离 |
-| PLAT-CONFIG-01、PLAT-HISTORY-01、PLAT-PURCHASE-01 | 资格配置和缓存、安装事实、独立购买规则 |
+| PLAT-CONFIG-01、PLAT-HISTORY-01、PLAT-PURCHASE-01 | 资格配置和缓存、用户动作预检、安装事实、独立购买规则 |
 
 Admin 的浏览器用例用模拟接口覆盖按学校授予和撤销、平台管理员标识与缺失模块提示。生产槽位、匿名验收和真实账号清单由 Ops 维护。[Admin 浏览器用例](https://github.com/StuHelper/stuhelper-admin/blob/v0.1.11/tests/e2e/access.spec.mjs)
 
@@ -96,5 +100,5 @@ Admin 的浏览器用例用模拟接口覆盖按学校授予和撤销、平台�
 
 - Admin v0.1.11 的角色页面尚未调用原子换角色和批量授权接口，内置模板仍显示响应中的默认名称。对应界面交付与翻译覆盖待验证。
 - Admin v0.1.11 的动作资格快照仍为 0.2.0，页面按学校和动作读取、提交规则。Platform 0.3.0 已提供学校矩阵、覆盖重置和预检接口。[Admin 资格契约来源](https://github.com/StuHelper/stuhelper-admin/blob/v0.1.11/contracts/platform-eligibility.source.json)
-- Backend v0.1.46 注册了用户动作预检路由，宿主尚未提供预检依赖，已认证且参数有效的请求会返回 503。学校覆盖重置仍待真实部署身份验收。
+- Backend v0.1.46 缺少预检依赖，已认证且参数有效的请求返回 503。生产组合的用户动作预检和学校覆盖重置待验收。
 - 生产真实管理员授权、跨模块记录覆盖及部分结果展示待按上线验收清单核对。
