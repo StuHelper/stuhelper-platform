@@ -16,6 +16,7 @@ scenario_tests:
     - postgres/integration_test.go#TestEligibilityActionWhitelistAndMalformedInputsNeverReturn503
     - eligibility/admission_test.go#TestAdmissionFailsClosedWhenRulesUnwiredAndPreservesServedSchoolScope
     - eligibility/httpapi/handler_test.go#TestEligibilityHTTPActionWhitelistValidationAndProtocolHeaders
+    - eligibility/preview_test.go#TestEligibilityPreflightBatchAndDegradedFacts
     - eligibility/cache_test.go#TestRuleCacheExpiryInvalidationAndFailure
     - eligibility/cache_test.go#TestRuleCacheDoesNotReinsertInvalidatedInFlightRead
   PLAT-HISTORY-01:
