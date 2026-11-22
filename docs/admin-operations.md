@@ -1,147 +1,104 @@
 ---
 type: development
 status: InReview
-updated: 2026-11-20
+updated: 2026-11-22
 ---
 
 # 管理角色与操作记录
 
 ## 实现范围
 
-本模块实现角色模板、不可变角色定义、学校／群／业务模块授权、有效授权求值，以及跨模块操作记录汇总查询。依据为 stuhelper 的 admin-operations、platform-architecture 和 data-retention 规格。
+Platform 提供角色模板、不可变角色定义、学校／群／业务模块授权、有效授权查询与跨模块操作记录。模块各自保存原始审计，通过公开查询接口返回脱敏摘要。规则见[管理角色与配置操作规格](https://github.com/StuHelper/stuhelper/blob/develop/docs/spec/admin-operations.md)。
 
-platform 拥有统一操作记录查询。各业务模块继续拥有原始审计，并与业务写入同事务提交。platform 通过公开提供方接口读取脱敏摘要，不直接访问其他模块数据库，也不复制认证材料或交易载荷。
+管理接口以 `/api/v1/platform/admin` 为前缀。契约版本为 0.4.0，Go SDK 位于 `sdk/admin`，TypeScript 类型位于 `sdk/admin.gen.ts`。[管理操作 OpenAPI](https://github.com/StuHelper/stuhelper-platform/blob/develop/contracts/admin.openapi.json)
 
-管理员列表每页最多返回 1,000 项可见授权。学校、群和模块范围求交后超出上限时，接口返回 400。调用方可收窄范围或减少每页人数。
+## 宿主与客户端接入
 
-## 接口与装配
+宿主可用 `admin/httpapi.NewRoutes` 或 `Handler.Routes` 生成 `transport.Route`，也可通过 `Handler.Register` 挂载到 `http.ServeMux`。认证适配器校验当前会话及写请求的 CSRF，错误响应携带与 `X-Request-ID` 对应的 `request_id`。
 
-OpenAPI 0.4.0 位于 contracts/admin.openapi.json。Go SDK 位于 sdk/admin，TypeScript 类型位于 sdk/admin.gen.ts。生成与兼容性检查纳入 make check。
+管理接口和所属业务 Service 从可信认证结果取得 `account.Principal`。业务 Service 将对象的真实学校、群和模块范围传入 `admin.Service.Evaluate`。服务端按当前规则检查每次操作，业务模块继续负责对象归属、资格和字段权限。
 
-宿主可使用 admin/httpapi.NewRoutes 或 Handler.Routes 统一生成 transport.Route 切片（也可通过 Handler.Register 挂载至 ServeMux）。Authenticate 必须校验当前会话并在写请求中校验 CSRF，错误响应携带与 X-Request-ID 一致的 request_id。缺少身份适配器时返回不可用，HTTP 请求不能声明平台管理员身份。
+StuHelper v0.1.31 的生产组合包含 Platform v0.2.1、Backend v0.1.46 与 Admin v0.1.11。Backend 注入当前会话与 Casdoor 账号身份，装配角色、授权和操作记录接口。已装配的业务模块通过所属查询接口接入汇总。[根仓发行](https://github.com/StuHelper/stuhelper/releases/tag/v0.1.31)
 
-公开 Go 接口为 admin.Service.Evaluate(ctx, principal, capability, scope)。principal 使用 account.Principal，由可信认证结果提供。对象的学校、群和业务模块范围由所属业务 Service 提供，不能直接信任请求参数。
+Backend develop 使用当前会话、`content_school_id`、生效资格规则和本人事实装配 `GET /api/v1/platform/eligibility-check`。普通登录用户可预检所属站点学校的动作。匿名请求返回 401，跨校及账号被拒绝的请求返回 403。[Backend 宿主装配](https://github.com/StuHelper/stuhelper-backend/pull/164)
 
-Identity.PlatformAdmin 每次查询当前身份与账号状态。Casdoor 目标组织的有效 IsAdmin 是平台管理员身份来源。身份撤销应返回拒绝，身份依赖故障返回不可用。
+预检逐项返回满足、缺失和暂不可用的条件。缺少课程上下文时，选课条件标为暂不可用。业务端仍按当前事实和目标检查每次实际操作。
 
-## 授权规则
+Admin 的角色管理页支持创建角色、查询有效授权、逐条授予与撤销，并标示平台管理员拥有全部能力。操作记录页支持来源、操作者、目标、动作与时间筛选，提示缺失模块。[Admin 访问控制页面](https://github.com/StuHelper/stuhelper-admin/tree/v0.1.11/apps/web-antd/src/features/access)
 
-可信平台管理员自动拥有任意能力和任意对象范围，包括财务查询、退款、完整身份字段和材料查看等敏感能力。Evaluate 校验当前身份后直接允许，不依赖显式授权记录。普通管理员仍按显式角色及范围求值。
+## 角色与授权
 
-模板包括平台、学校、内容审核、资料、群和财务六类，返回默认名称、稳定国际化翻译键 `label_key` 和非敏感建议能力。平台模板包含授权管理、审计读取、资格配置与模块状态读取，财务模板只建议配置读取而不捆绑敏感账务或退款权限。具体业务能力标识由所属模块确认和接入，模板名称不产生任何授权。
+Casdoor 目标组织的有效 `IsAdmin` 提供平台管理员身份。平台管理员拥有全部能力与对象范围，包括敏感能力。其他管理员通过精确的能力标识和范围获得授权。有效账号失去平台管理员身份后按显式授权求值。账号失效时拒绝访问，身份依赖故障时返回不可用。
 
-角色定义只能由平台管理员创建。角色定义不可修改和删除；调整能力时创建新角色 ID，再撤销旧授权并授予新角色。角色定义上限 1000，每个管理员有效授权上限 1000，达到上限返回 conflict。
+平台、学校、内容审核、资料、群和财务六类模板提供角色创建建议。响应的 `label_key` 采用 `platform.admin.role_template.<id>`，供客户端翻译内置模板名称。`name` 承载默认名称或自定义角色名。财务模板只建议配置读取能力。
 
-普通管理员的能力必须精确匹配。学校、群和业务模块三个维度分别匹配，* 表示该维度全部范围。三个维度必须同时满足，群标识不会自动推导出学校权限。查询能力不能用于业务修改。
+只有平台管理员可以创建角色。角色定义上限和单账号有效授权上限各为 1,000。需要调整能力时创建新角色 ID，再替换旧授权。角色定义不可修改或删除，创建角色也不会直接产生授权。
 
-平台管理员可以授予任意能力和任意范围。普通授予者必须拥有目标范围的 platform.authorization.manage，以及被授予的每个能力和完整目标范围。只有平台管理员可授予 platform.* 能力。任何人均不能给自己增加授权。
+显式授权同时匹配学校、群、模块三个维度。`*` 代表某一维度的全部范围，群标识不会推导学校权限。查询和修改使用各自的能力标识。
 
-授权集合以管理员为单位使用递增修订号。授予、撤销及单账号原子替换（grant-changes）必须提交 expected_revision，冲突返回 409。单账号原子替换在同一事务内完成新旧角色切换并只递增一次修订号，批量接口（batch-grant-changes）支持最多 50 名管理员的 dry_run 预览与逐项执行。
+普通委托人需要拥有完整目标范围的 `platform.authorization.manage` 和拟授予的每项能力。只有平台管理员可委托 `platform.*` 能力。自授永远被拒绝。
 
-角色列表（GET /roles）向具备全局或任意范围 platform.authorization.read 的身份按创建时间和角色 ID 降序分页返回角色定义。管理员反查列表（GET /administrators）先将查询条件与当前授权范围求交集，再返回收窄后的授权摘要及当前修订号。
+授予、撤销和单账号原子替换须提交操作原因、`expected_revision` 和幂等键。角色替换将新增与撤销放进同一事务，只递增一次修订号。批量接口为最多 50 个不同账号提供 `dry_run` 预览和逐项执行。
 
-授权求值不缓存角色与范围。撤销提交后发起的新请求立即读取新状态。已经开始的查询使用一致性事务快照；所属业务模块须在实际操作前调用授权接口，不能将一次判断长期保存为通行凭据。
+变更前检查当前权限和预期修订号，旧修订返回 409。授权、审计和幂等回执一并提交。相同操作者与幂等键重放相同请求时，服务复核权限后返回原结果。同键对应不同请求时返回 409。
 
-授权写事务串行完成当前授权检查、修订检查、授权写入、审计和幂等回执。相同操作者及幂等键的相同请求返回原结果，不同请求返回 409。返回旧回执前仍检查操作者当前权限。
+角色列表向具备任意范围 `platform.authorization.read` 的管理员分页返回角色定义。管理员反查只返回与查询条件和操作者范围相交的授权摘要。单页总计最多 1,000 个可见授权，超过上限时返回 400，可收窄范围或减少每页人数。
 
-## 查询与审计
+本人可查询自己的有效授权。查询他人需有相应范围的读取权限。服务先读取显式授权，释放数据库连接后再查询目标身份。被停用目标仍可由有权管理员查询显式授权，以便清理残留权限。
 
-查询他人有效授权需要查询范围的 platform.authorization.read，本人可查看自己的授权。服务先在只读事务中检查调用方查询权限并读取显式授权，释放连接后再查询被查询者身份。被查询账号已停用或无有效会话时按显式授权返回，便于清理残留权限，而身份服务故障仍返回不可用。
+`authorization_mode=platform_admin_all` 表示平台管理员拥有全部能力，`explicit_grants` 表示按响应中的显式授权判断展示。修订号只记录显式授权变动。授权求值每次调用当前身份适配器并读取所需授权，撤销提交后发起的请求读取新授权。
 
-有效授权响应的 authorization_mode 为 platform_admin_all 时，表示“平台管理员：全部能力及范围”；为 explicit_grants 时，依据 grants 中按查询范围收窄的显式授权。grants 为空不能用于判断平台管理员无权限。
+角色能力名由命名空间与非空分段组成，例如 `platform.audit.read`。迁移移除格式无效的能力，清理没有有效能力的角色及相应授权，并更新受影响账号的显式授权修订号。
 
-修订号仅属于显式授权集合，不表示平台管理员身份的修订。平台管理员身份每次重新检查，失去该身份后立即恢复显式授权求值。客户端应根据 authorization_mode 展示身份，不创建虚假角色，也不缓存身份结论用于授权。
+## 操作记录与分页
 
-操作记录查询将请求范围与当前 platform.audit.read 授权求交集，再向提供方传入允许的范围并分页。显式选择未授权模块返回 403；无模块筛选时仅查询已装配且获准的提供方。每页重新查询身份和授权。
+操作记录查询先将请求范围与 `platform.audit.read` 授权求交，再向获准的提供方请求数据。显式选择未获授权的模块返回 403。每页重新检查身份与授权。筛选变化返回 400，授权范围变化返回 403 并要求重新查询。
 
-查询支持目标对象、操作者、动作和起止时间筛选，时间区间为左闭右开。sources 按原始模块筛选，使用逗号分隔；module 继续表示对象的业务授权范围。例如 sources=platform 可查询平台发起的其他模块授权变更。
+`sources` 按原始记录模块筛选，`module` 表示对象所属的业务授权范围。查询还支持目标、操作者、动作和起止时间，时间区间为左闭右开。记录包含来源、对象、操作者、时间、动作、范围、原因和结果。
 
-单条记录 source 为原始模块，包含对象、操作者、时间、动作、原因、结果和范围。结果允许 success、denied、failed、unknown；缺失原因返回空字符串，缺失结果不能推测为成功。范围不明的历史记录仅向相应全局范围开放。
+结果允许 `success`、`denied`、`failed` 和 `unknown`。缺失原因用空字符串，无法确认的结果用 `unknown`。缺少可靠学校或群范围的记录只向有相应全局范围的账号开放。原始认证材料、交易载荷和内部扩展字段由提供方保留。
 
-审计保留 12 个月，授权幂等回执保留 24 小时，超过 24 小时的回执在后台清理前也不可继续命中，同键新请求会自动替换已到期记录。后台每轮最多清理 100 条审计、100 条授权回执和 100 条资格回执，限时 5 秒。当前角色与授权随部署数据保存。
+提供方在所属模块仓库内过滤授权范围和查询条件，按时间、来源、记录 ID 降序返回统一记录。记录 ID 在来源内保持唯一，字符串按字节比较。每页默认 50 条，最多 100 条。
 
+汇总查询最多读取 16 个提供方，每个最多返回页大小加一条。单提供方限时 250 毫秒，整次查询限时 5 秒。提供方须响应取消，并在首轮开始时固定成员集合，避免回填记录和延迟提交记录进入后续页。
 
-## 提供方与稳定分页
+游标绑定操作者、筛选、页大小、提供方集合和授权范围。提供方快照令牌最多 256 字节，游标最多 16,384 字节。快照只记录可见性，后续页沿用同一快照和全局排序位置。
 
-admin.AuditProvider.ReadAudit 接收可信操作者、已授权范围集合、时间／操作者／对象／动作筛选、全局排序位置、提供方快照和读取上限。backend 在 Service.AuditProviders 注册模块适配器，platform 自身提供方内置。
+响应的 `queried_modules` 列出此次获准的提供方。某个提供方未配置、超时、快照失效或返回异常时，响应设置 `partial=true`，并在 `missing_modules` 和 `missing_reasons` 中标记。后续页继续保留该标记，获取恢复后的记录需从第一页开始。
 
-提供方必须在所属模块的 Repository 中完成范围与条件过滤，然后按时间、来源模块、记录 ID 的降序读取。记录 ID 在模块内唯一且不可变，字符串按字节比较。返回统一 Record，不暴露原始 JSON 或任意扩展字段。
+Backend 应将应参与但暂不可用的模块显式注册为缺失提供方。主动查询获准但未注册的来源也会报告缺失。未指定来源时，`partial=false` 表示本次实际选择的提供方均成功。
 
-每页默认 50 条，上限 100。汇总最多读取 16 个提供方，每个最多读取页大小加一条，再按同一规则合并。调用顺序固定，单提供方限时 250 毫秒，整次查询限时 5 秒，提供方必须响应 context 取消。
+## 持久化与清理
 
-首轮确定时间上界，每个提供方返回固定成员集合的快照令牌。后续读取使用相同快照和全局排序位置。快照不能包含首轮以后提交的记录，即使记录时间被回填；快照过期须报错，不能静默重建。
+迁移身份通过 `postgres.Migrate` 按 `platform.schema_migrations` 增量执行 DDL。运行身份仅访问本模块数据。配置、角色、授权和安装事实随部署数据长期保存。审计保留 12 个月，授权与资格幂等回执以及操作记录快照保留 24 小时。
 
-游标绑定操作者、筛选、页大小、提供方集合和授权范围。筛选变化返回 400，授权范围变化返回 403并要求重新查询。每个快照令牌上限 256 字节，游标上限 16384 字节，平台只在数据库保存可见性快照，不保存结果集。
+平台使用 PostgreSQL 事务 ID 和可见性快照排除延迟提交。快照保存在 `audit_snapshots`，共有 4,096 个槽位，按操作者划分 64 个桶。每项可见性文本最多 1 MiB，桶满时替换最早的快照。
 
-platform 原始审计记录写入事务 ID，并用 PostgreSQL 可见性快照排除延迟提交。快照存入 audit_snapshots，令牌为 32 字节随机十六进制标识，不接受旧格式。
+查询释放只读事务的数据库连接后再保存快照，支持只有一个连接的连接池。清理审计记录与递增清理修订号在同一事务提交，分页遇到该修订号变化时将平台来源标为缺失。
 
-快照最多 4,096 项，每项可见性文本上限 1 MiB，有效期 24 小时。有身份请求按操作者哈希划分 64 个独立槽位桶，防止单个操作者高频查询清退全站快照。各实例通过 PostgreSQL 事务锁在同一桶中优先选用空槽，桶满时替换最早的快照。快照在只读事务提交释放连接后再写入数据库，消除单连接池嵌套请求死锁。Cleanup 每轮最多删除 100 项过期快照。
+`Cleanup` 每轮最多分别清理 100 条审计、100 条授权回执、100 条资格回执和 100 项过期快照，限时 5 秒。过期回执即使尚未清理也不能命中。`RetentionStatus` 查询各表过期积压，`RetentionCleaner` 可接入 Fx 生命周期。
 
-保留期清理在同一事务递增审计清理修订号；分页期间发生清理会使平台快照失效，响应标记 platform 缺失。
+运行身份需有 `audit_snapshots` 的增删改查权限、`audit_snapshot_slot` 的 USAGE 及 `audit_retention` 的读取与更新权限。审计表删除用于保留期清理。原始审计、回执和角色定义禁止更新，角色定义的删除只由迁移处理。
 
-响应 queried_modules 列出本次获准的提供方。提供方故障、超时、快照失效或违反范围／排序要求时，整个提供方批次被丢弃，partial=true，missing_modules 列出缺失模块，missing_reasons 区分 snapshot_expired、unconfigured、timeout 与 unavailable。没有可用记录时仍明确标记部分结果。
+## 验证记录
 
-同一分页过程持续保留缺失模块，不在后续页突然补入恢复的数据。恢复后需从第一页重新查询。partial=false 仅说明已装配且获准的提供方均返回成功；backend 应将预期存在但暂不可用的模块注册为 nil，使缺失可见。
+独立 Platform v0.2.1 的 CI 通过生成、契约、边界、竞态测试和构建检查，数据库测试使用临时 PostgreSQL 集群。相关场景及实际函数以仓库根目录的 `module.yaml` 为准。[发布提交的 Platform 检查](https://github.com/StuHelper/stuhelper-platform/actions/runs/44614914173)
 
-当前契约使用业务模块 source、多种 result 取值和跨模块游标；消费者须使用当前生成 SDK。有效授权查询还包含必需的 authorization_mode 字段，页面据此展示平台管理员的全部能力。
-
-## 数据库与后续接入
-
-迁移身份执行 postgres.Migrate，按 platform.schema_migrations 记录的版本号增量执行未应用的 DDL，避免重复重启时对存量审计表申请排他锁，不覆盖旧业务数据。audit_snapshots 需要 SELECT／INSERT／UPDATE／DELETE，audit_snapshot_slot 序列需要 USAGE；现有按 schema 授权脚本须在迁移后重跑。快照元数据独立提交，查询失败留下的条目仍受容量和过期规则限制。
-
-audit_retention 保存清理修订号，运行身份需要 SELECT／UPDATE；audit 的 recorded_xid 由数据库默认写入。
-
-运行身份只访问 platform schema，禁止 UPDATE／DELETE admin_roles，禁止 UPDATE audit、eligibility_requests 和 admin_requests。audit 的 DELETE 用于保留期清理。
-
-backend 后续须更新依赖、运行身份授权和 platformapp 装配，注入当前身份接口并注册新路由。sessionapp 保留认证职责，将管理能力与范围判断委托给 Evaluate；SubjectSchools 改为使用实际有效授权范围。
-
-各业务适配器继续通过自己的公开授权接口调用 Evaluate，并提供真实对象范围。查询与修改分别使用能力标识。现有业务状态、资格规则和字段权限检查继续由业务 Service 执行。
-
-## 验证与待完成事项
-
-本地隔离 PostgreSQL 18.6 已通过 make check（契约与本轮修改前提交比较），包括生成一致性、OpenAPI 校验、导入边界、go vet、竞态测试、构建和工作流检查。真实数据库测试使用独立库及运行身份，覆盖越界拒绝和审计失败回滚。
-
-| 场景 | 当前验证 |
+| 场景 | 测试范围 |
 | --- | --- |
-| AO-01 | 群、学校、模块范围分别拒绝越权；角色不附带其他业务能力 |
-| AO-02 | 并发修改仅一个修订成功，冲突返回 409；相同请求重放不重复写入 |
-| AO-04 | 查询能力不能用于退款或修改认证 |
-| 平台管理员 | 全部业务与敏感能力放行、跨范围委托成功、自授拒绝、目标身份查询及撤销即时生效 |
-| 授权边界 | 越权委托、自我提权、平台能力授予、范围外查询、撤销立即生效 |
-| 数据一致性 | 授权唯一约束、授权与审计原子提交、数据库身份隔离 |
-| 跨模块查询 | 多提供方稳定排序、回填及延迟提交、范围过滤、撤销翻页、故障／超时与保留期清理缺失标记 |
-| AO-03 | 单账号原子角色切换无权限空窗，多管理员批量预览与逐项保存点隔离执行及幂等重放 |
+| AO-01、AO-04 | 授权范围求交、委托边界、查询和修改能力分别验证 |
+| AO-02 | 并发修订冲突、重放防多写、回执过期和权限撤销 |
+| AO-03 | 单账号原子替换、批量预览、逐项保存点隔离和幂等 |
+| AO-05、PLAT-ADMIN-ALL-01 | 平台管理员敏感能力、跨范围委托和目标身份变更 |
+| AO-06、PLAT-AUDIT-01 | 稳定翻页、延迟提交、失效与清理、提供方异常和缺失响应 |
+| PLAT-ADMIN-01 | 角色能力名迁移、身份查询、授权审计事务和数据库隔离 |
+| PLAT-CONFIG-01、PLAT-HISTORY-01、PLAT-PURCHASE-01 | 资格配置和缓存、用户动作预检、安装事实、独立购买规则 |
 
-backend 授权适配、Web/Admin 消费者快照与页面、跨仓候选组合验证、真实账号验收均待后续任务。公开示例未装配真实管理员身份，本轮不涉及部署。
+Admin 的浏览器用例用模拟接口覆盖按学校授予和撤销、平台管理员标识与缺失模块提示。生产槽位、匿名验收和真实账号清单由 Ops 维护。[Admin 浏览器用例](https://github.com/StuHelper/stuhelper-admin/blob/v0.1.11/tests/e2e/access.spec.mjs)
 
-## backend 审计适配器字段映射
+## 待完成与待验证
 
-下表以候选工作树现有写入代码为依据。对象和操作者使用内部标识。缺少独立操作者或可靠范围时，需要所属模块补充记录或限制为全局查询，不能把记录所有者自动当成管理操作者。
-
-| 提供方 | 原始表及字段映射 | 缺失与接入要求 |
-| --- | --- | --- |
-| platform | audit：id、target、actor、created_at、action、reason、result、school/group_id/module | 已内置；历史缺失范围为全局 |
-| catalog | catalog.audit.data：ID、Subject、Actor、Time、Type、SchoolID | 原因与结果未单列 |
-| reviews | reviews.audit.data：ID、Subject、Actor、At、Type、SchoolID | 原因与结果未单列 |
-| moderation | moderation.audit.data：ID、Subject、Actor、At、Type、SchoolID | 原因与结果未单列；不能把审核决定直接等同执行结果 |
-| resources | resources.audit.data：ID、ResourceID、Actor、Time、Type、SchoolID | 原因与结果未单列 |
-| verification | verification.audit：id、time；data.object/actor/type/school_id | 原因与结果未单列；禁止返回认证材料和身份原值 |
-| media | media.audit.data.event：id、subject、time、type；data.actor 为 issuer/subject | 没有学校／群、原因和结果字段，需模块补充可靠范围 |
-| storage | storage.audit.data.event：id、subject、time、type、data.object_id；外层 actor | 对象优先采用 object_id；范围、原因和结果未单列 |
-| storage-contribution | contribution.audit.data.event：id、subject、time、type；外层 actor | event.data.state 是业务状态，不能直接作为操作结果 |
-| billing | billing.audit：seq、reference、actor_issuer/actor_subject、created_at、kind | issuer/subject 是目标账户；范围、原因与结果未单列，禁止返回交易载荷 |
-| qq-binding | qq_binding.audit：id、owner、actor、created_at、kind、reason | 结果及学校／群范围未单列；owner 是目标账号 |
-| open-platform | open_platform.events：id、object_id、actor、created_at、kind | operation 是操作／幂等标识，不是原因或结果 |
-| profiles | profiles.closure_events：id、closure_id、actor_issuer/actor_subject、created_at、action | 关闭任务之外的 profiles.events 没有独立操作者，不能直接当成管理审计 |
-| identity | identity.audit：id、issuer/subject、created_at、action | issuer/subject 标识关联账号，没有独立管理操作者或对象字段，接入前须明确事件语义 |
-| favorites | favorites.events：id、owner_key、created_at、kind、operation | owner_key 是所有者，operation 是操作标识；未记录独立管理操作者与对象，接入前补齐 |
-
-以上适配器由 backend 装配，但查询和数据映射在各模块公开接口内完成，不由 backend 或 platform 直接跨 schema 读取。原因缺失用空字符串，结果无法证明时用 unknown；操作者无法证明的记录不冒充已知管理员。
-
-所有模块适配器都需提供稳定快照、范围先过滤、取消响应和有界读取。缺少学校或群范围时不能向学校／群管理员返回记录。模块有自己的附加敏感审计权限时，适配器仍须执行该权限。
-
-候选 groups 与 information-query 尚无对应实现，不能声明群审计已接入。notifications.items／receipts 是通知与幂等数据，当前没有原始管理审计表，不应将消息内容转换为管理审计。
-
-角色能力名由命名空间和一个或多个非空分段组成，例如 `platform.audit.read`。迁移移除不符合格式的能力。若某角色已无有效能力，迁移同时移除该角色及其授权，并更新受影响账号的授权修订号。
-
-此次契约检查按接口、字段和新旧正则逐项确认角色能力名的变化。角色迁移后用 PostgreSQL 回归验证授权和修订号。所有维护分支采用新格式后，可移除 `admin-capability-migration.warn-ignore`。
+- Admin v0.1.11 的角色页面尚未调用原子换角色和批量授权接口，内置模板仍显示响应中的默认名称。对应界面交付与翻译覆盖待验证。
+- Admin v0.1.11 的动作资格快照仍为 0.2.0，页面按学校和动作读取、提交规则。Platform 0.3.0 已提供学校矩阵、覆盖重置和预检接口。[Admin 资格契约来源](https://github.com/StuHelper/stuhelper-admin/blob/v0.1.11/contracts/platform-eligibility.source.json)
+- Backend v0.1.46 缺少预检依赖，已认证且参数有效的请求返回 503。生产组合的用户动作预检和学校覆盖重置待验收。
+- 生产真实管理员授权、跨模块记录覆盖及部分结果展示待按上线验收清单核对。

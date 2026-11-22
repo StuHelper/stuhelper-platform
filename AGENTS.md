@@ -1,24 +1,16 @@
 # 工程约定
 
-- 本仓库是 StuHelper 按业务模块拆分的一部分。架构与业务边界以 https://github.com/StuHelper/stuhelper 为准。
-- 普通变更从最新 origin/develop 创建专用短期分支和独立 worktree，通过 PR squash 到 develop。发布走 develop 到 main 的 merge commit；tag、镜像发行与生产晋级需要 owner 明确授权。
-- 普通检查使用 ubuntu-26.04。Docker/OCI 构建和 BJ1 Registry 操作固定使用 StuHelper 自建 runner。不修改其他仓库、生产数据或运行配置来完成普通开发任务。
-- GitHub Actions 与部署镜像使用明确版本 tag。摘要与源码提交用于核验和追溯。独立检查不使用 GitHub Actions cache 或 artifacts。新增共享缓存时遵循架构仓库的 CI 规格。
-- 接口先定义 OpenAPI，生成文件不得手改。模块只访问自己的数据，通过明确接口与其他模块协作。私有实现、凭据和身份原始数据不得进入公共仓库。
-- 业务后端遵循 Handler → Service → Repository，SQL 仅位于 Repository。客户端使用生成接口类型，不实现服务端权限规则。
-- 记录实际检查范围；框架测试通过不表示业务、真实登录、生产部署或迁移通过。发现失败先修复并重跑原检查。
-- Docker 测试只使用任务专属资源，完成或失败后清理本任务创建的容器、无用镜像及缓存，不做全局清理。
-- 保留其他任务的未提交修改。当前只搭框架，不实现业务；原生端与社区模块搁置。
+<!-- updated: 2026-11-21 -->
 
-任务工作树统一放在 `workspace/worktrees/<任务>/<仓库名>`。文档直接维护当前状态，术语和国际化遵循架构仓库的统一规格。
+- 本仓库维护 StuHelper 公共 Go 框架和平台接口。业务模块拥有自己的数据、迁移与公开接口。产品装配和生产配置由各所属仓库维护。[平台架构](https://github.com/StuHelper/stuhelper/blob/develop/docs/design/platform-architecture.md)
+- 从最新 `origin/develop` 创建短期分支，任务工作树放在 `workspace/worktrees/<任务>/<仓库名>`，保留其他任务的改动。PR squash 合入 develop。发行及生产晋级按根仓授权流程执行。
+- 普通检查使用 GitHub 托管 `ubuntu-26.04` 和固定版本的共享工作流。本仓 CI 通过 `scripts/check-with-postgres.sh` 运行完整检查。Docker 与 BJ1 Registry 任务使用 StuHelper 自建 runner，并使用任务专属资源。
+- 锁文件固定依赖，正式 Go 检查使用 `GOWORK=off`。Actions 工作流与部署镜像使用明确版本 tag，提交和摘要用于核验。缓存规则随当前工作流和[CI 规格](https://github.com/StuHelper/stuhelper/blob/develop/docs/spec/ci-runners.md)维护。
+- 接口先定义 OpenAPI，再用 `make generate` 更新生成文件。Handler 负责请求与响应，Service 负责编排规则，Repository 负责数据访问。身份原值与凭据留在获准私有环境。
+- 以 [module.yaml](module.yaml) 的 `scenario_tests` 登记当前场景及真实测试函数。分别报告仓内检查、跨仓组合、生产部署和真实账号验收。检查失败时修复并重跑原检查，再验证受影响阶段。
 
-## 沟通与回复
+## 文档与沟通
 
-* 文档直接描述当前行为、当前实现和剩余工作。代码或规则变化时，同步替换相应文档中的旧内容，合并重复段落。历史细节由 Git、PR 和 CI 保存。
-* 使用现有主题承载长期规则与实施状态。验证结果随对应主题更新，日常修复保持文档简洁。
-* 使用自然、具体的现代汉语，说明对象、动作和结果。直接写出当前规则，必要的技术对比说明具体条件和边界。
-* 保留准确的专业术语，并解释影响理解的概念。段落围绕一个主题，使用连接词说明因果和条件。
-* 回复先给结果，再给必要证据与剩余事项。检查通过、真实账号验收、发行和部署分别报告。失败先修复并重跑原检查，再验证受影响阶段。
-* 长期文档使用相关写作技能。已明确的授权直接沿用，待确认的产品选择保持 InReview。工具明确进入 Goal Mode 时减少进度沟通，其余情况按正常协作执行。
-
-公共测试、工具链升级、文档编号、许可证和 PR 约定遵循[架构仓库工程约定](https://github.com/StuHelper/stuhelper/blob/develop/AGENTS.md)。本仓库使用固定版本的共享工程工具执行检查。
+- 用现有主题说明当前行为、实现进度与验证范围。待确认的产品选择保留 InReview。正文改动同步更新 `updated`，段落不超过 200 个可见字符。
+- 使用准确、自然的中文，先说明结果，再列依据和待确认事项。术语和界面国际化遵循统一规格。[术语表](https://github.com/StuHelper/stuhelper/blob/develop/docs/spec/terminology.md) · [国际化规格](https://github.com/StuHelper/stuhelper/blob/develop/docs/spec/internationalization.md)
+- 长期技术文档使用相关写作技能。在 Goal Mode 下减少进度沟通。跨仓、许可证、交付及验证规则见[根仓工程约定](https://github.com/StuHelper/stuhelper/blob/develop/AGENTS.md)。
