@@ -82,7 +82,7 @@ func TestAdmissionFailsClosedWhenRulesUnwiredAndPreservesServedSchoolScope(t *te
 	}
 
 	// Unsupported condition on non-enrollment action must fail closed with ErrUnavailable.
-	badRule := staticRule{rule: e.Rule{Version: "2", Conditions: []e.Condition{e.Enrollment}}}
+	badRule := staticRule{rule: e.Rule{Version: "2", Conditions: []e.Condition{e.Condition("course_enrollment")}}}
 	if _, err := (e.Admission{School: "buaa", Rules: badRule, Facts: satisfied}).Check(ctx, "user-1", "buaa", "content.enter"); !errors.Is(err, e.ErrUnavailable) {
 		t.Fatalf("expected ErrUnavailable for unsupported condition on content.enter, got %v", err)
 	}

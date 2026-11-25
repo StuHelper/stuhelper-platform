@@ -284,7 +284,7 @@ func TestEligibilityActionWhitelistAndMalformedInputsNeverReturn503(t *testing.T
 
 	// Unsupported course_enrollment on non-course-review actions returns ErrRule and writes nothing.
 	for _, action := range []string{"content.enter", "resources.upload", "membership.purchase"} {
-		if _, err := s.Set(ctx, "admin", "bad-"+action, "buaa", action, e.Change{ExpectedVersion: "1", Conditions: []e.Condition{e.Enrollment}}); !errors.Is(err, e.ErrRule) {
+		if _, err := s.Set(ctx, "admin", "bad-"+action, "buaa", action, e.Change{ExpectedVersion: "1", Conditions: []e.Condition{e.Condition("course_enrollment")}}); !errors.Is(err, e.ErrRule) {
 			t.Fatalf("%s: expected ErrRule, got %v", action, err)
 		}
 	}
@@ -312,9 +312,9 @@ func TestEligibilityActionWhitelistAndMalformedInputsNeverReturn503(t *testing.T
 		t.Fatalf("Set(bad actor): expected ErrRule, got %v", err)
 	}
 
-	// Supported course_enrollment on publish_course persists rule and audit atomically.
-	rule, err := s.Set(ctx, "admin", "ok-course", "buaa", "publish_course", e.Change{ExpectedVersion: "1", Conditions: []e.Condition{e.Campus, e.Enrollment}})
-	if err != nil || rule.Version != "2" || len(rule.SupportedConditions) != 5 {
+	// Supported identity conditions on publish_course persists rule and audit atomically.
+	rule, err := s.Set(ctx, "admin", "ok-course", "buaa", "publish_course", e.Change{ExpectedVersion: "1", Conditions: []e.Condition{e.Campus, e.Phone}})
+	if err != nil || rule.Version != "2" || len(rule.SupportedConditions) != 4 {
 		t.Fatalf("publish_course Set failed: %+v, %v", rule, err)
 	}
 	if err := owner.QueryRow(`SELECT count(*) FROM platform.eligibility_rules WHERE school='buaa' AND action='publish_course'`).Scan(&count); err != nil || count != 1 {

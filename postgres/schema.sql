@@ -82,3 +82,10 @@ FROM invalid_role_capabilities i WHERE r.id=i.id;
 UPDATE platform.admin_requests SET digest='invalidated-role-format', result='{}'
 WHERE EXISTS (SELECT 1 FROM jsonb_path_query(result,'strict $.**.capabilities[*]', '{}', true) cap
               WHERE length(cap #>> '{}') > 128 OR (cap #>> '{}') COLLATE "C" !~ '^[a-z][a-z0-9-]*([.][a-z][a-z0-9_-]*)+$');
+
+-- +migration 7
+WITH changed AS (
+ UPDATE platform.eligibility_rules SET conditions=conditions-'course_enrollment'
+ WHERE action='publish_course' AND conditions ? 'course_enrollment' RETURNING school
+)
+UPDATE platform.eligibility_revisions SET revision=revision+1 WHERE school IN (SELECT school FROM changed);

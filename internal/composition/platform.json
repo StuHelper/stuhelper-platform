@@ -12,6 +12,9 @@
     ],
     "capability_requires": {},
     "scenario_tests": {
+      "AE-SD-01": [
+        "eligibility/preview_test.go#TestEligibilityPreflightBatchAndDegradedFacts"
+      ],
       "PLAT-CONFIG-01": [
         "transport/router_test.go#TestExplicitHeadRouteUsesItsOwnProtectedHandler",
         "postgres/migration_test.go#TestIncrementalMigrationPreservesExistingSchoolRevisions",
