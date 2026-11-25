@@ -96,8 +96,8 @@ func TestEligibilityHTTPActionWhitelistValidationAndProtocolHeaders(t *testing.T
 	mux := http.NewServeMux()
 	mux.Handle("/api/v1/platform/eligibility/{school}/{action}", h)
 
-	// A-01: course_enrollment is rejected for non-course-review actions (400), allowed for publish_course (200).
-	for _, action := range []string{"content.enter", "resources.upload", "membership.purchase", "publish_mentor"} {
+	// A-01: course_enrollment is rejected for every action, including publishing.
+	for _, action := range []string{"content.enter", "resources.upload", "membership.purchase", "publish_mentor", "publish_course"} {
 		req := httptest.NewRequest("PUT", "/api/v1/platform/eligibility/buaa/"+action, strings.NewReader(`{"expected_version":"1","conditions":["course_enrollment"]}`))
 		req.Header.Set("Idempotency-Key", "bad-"+action)
 		w := httptest.NewRecorder()
@@ -109,12 +109,12 @@ func TestEligibilityHTTPActionWhitelistValidationAndProtocolHeaders(t *testing.T
 	if repo.writes != 0 {
 		t.Fatalf("rejected rule writes reached repository: %d", repo.writes)
 	}
-	req := httptest.NewRequest("PUT", "/api/v1/platform/eligibility/buaa/publish_course", strings.NewReader(`{"expected_version":"1","conditions":["campus_eligibility","course_enrollment"]}`))
+	req := httptest.NewRequest("PUT", "/api/v1/platform/eligibility/buaa/publish_course", strings.NewReader(`{"expected_version":"1","conditions":["campus_eligibility","phone_bound"]}`))
 	req.Header.Set("Idempotency-Key", "ok-publish-course")
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != 200 || repo.writes != 1 {
-		t.Fatalf("publish_course rejected valid course_enrollment: %d %s (writes=%d)", w.Code, w.Body.String(), repo.writes)
+		t.Fatalf("publish_course rejected valid identity conditions: %d %s (writes=%d)", w.Code, w.Body.String(), repo.writes)
 	}
 
 	// A-09 & A-15: malformed school/action rejected with 400 BEFORE Authorize is called; whitespace/non-ASCII Idempotency-Key rejected with 400.

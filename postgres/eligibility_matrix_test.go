@@ -44,7 +44,7 @@ func TestEligibilitySchoolMatrixOverrideResetAndPerSchoolRevisions(t *testing.T)
 		t.Fatalf("unexpected supported_conditions for resources.upload: %+v", uploadInitial.SupportedConditions)
 	}
 	courseInitial := matrix.JSON200.Rules["publish_course"]
-	if courseInitial.SupportedConditions == nil || len(*courseInitial.SupportedConditions) != 5 {
+	if courseInitial.SupportedConditions == nil || len(*courseInitial.SupportedConditions) != 4 {
 		t.Fatalf("unexpected supported_conditions for publish_course: %+v", courseInitial.SupportedConditions)
 	}
 
@@ -52,7 +52,7 @@ func TestEligibilitySchoolMatrixOverrideResetAndPerSchoolRevisions(t *testing.T)
 	badReason := "invalid enrollment condition"
 	badPut, err := client.SetEligibilityRuleWithResponse(ctx, "buaa", sdk.ResourcesUpload, &sdk.SetEligibilityRuleParams{IdempotencyKey: "bad-cond"}, sdk.Change{
 		ExpectedVersion: "1",
-		Conditions:      []sdk.ChangeConditions{sdk.ChangeConditionsCourseEnrollment},
+		Conditions:      []sdk.ChangeConditions{sdk.ChangeConditions("course_enrollment")},
 		Reason:          &badReason,
 	})
 	if err != nil || badPut.StatusCode() != 400 {

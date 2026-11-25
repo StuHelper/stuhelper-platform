@@ -34,13 +34,9 @@ func Actions() []string {
 }
 
 // SupportedConditions returns the explicit condition whitelist for an action.
-// Only publish_course has a course enrollment context; other actions reject
-// course_enrollment so misconfiguration cannot trigger runtime 503 failures.
 func SupportedConditions(action string) ([]Condition, error) {
 	switch action {
-	case "publish_course":
-		return []Condition{Content, Campus, Phone, Identity, Enrollment}, nil
-	case "content.enter", "read_full", "vote", "bookmark", "report", "resources.discover", "resources.download.public", "resources.download.restricted", "resources.purchase", "membership.purchase", "publish_mentor", "reply", "resources.upload", "reply_teacher":
+	case "publish_course", "content.enter", "read_full", "vote", "bookmark", "report", "resources.discover", "resources.download.public", "resources.download.restricted", "resources.purchase", "membership.purchase", "publish_mentor", "reply", "resources.upload", "reply_teacher":
 		return []Condition{Content, Campus, Phone, Identity}, nil
 	default:
 		return nil, ErrRule
@@ -58,7 +54,7 @@ func (Defaults) Effective(_ context.Context, action, _ string) (Rule, error) {
 		return Rule{}, ErrRule
 	}
 	rule := Rule{
-		Version:             "initial-20261108",
+		Version:             "initial-20261126",
 		Conditions:          []Condition{},
 		Source:              SourceInitialDefault,
 		SupportedConditions: supported,
@@ -68,9 +64,7 @@ func (Defaults) Effective(_ context.Context, action, _ string) (Rule, error) {
 		rule.Conditions = []Condition{Content}
 	case "resources.purchase", "membership.purchase":
 		rule.Conditions = []Condition{Campus}
-	case "publish_course":
-		rule.Conditions = []Condition{Campus, Phone, Enrollment}
-	case "publish_mentor", "reply", "resources.upload":
+	case "publish_course", "publish_mentor", "reply", "resources.upload":
 		rule.Conditions = []Condition{Campus, Phone}
 	case "reply_teacher":
 		rule.Conditions = []Condition{Phone}

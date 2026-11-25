@@ -516,8 +516,7 @@
                 "content_access",
                 "campus_eligibility",
                 "phone_bound",
-                "identity_verified",
-                "course_enrollment"
+                "identity_verified"
               ]
             }
           },
@@ -534,7 +533,7 @@
           },
           "supported_conditions": {
             "type": "array",
-            "description": "当前动作允许配置的条件白名单。仅 publish_course 支持 course_enrollment，其余动作支持 content_access、campus_eligibility、phone_bound、identity_verified。",
+            "description": "动作资格条件包括内容准入、校园资格、手机号和独立实名。各动作支持全站规则与学校覆盖。",
             "uniqueItems": true,
             "maxItems": 5,
             "items": {
@@ -543,8 +542,7 @@
                 "content_access",
                 "campus_eligibility",
                 "phone_bound",
-                "identity_verified",
-                "course_enrollment"
+                "identity_verified"
               ]
             }
           }
@@ -565,7 +563,7 @@
           },
           "conditions": {
             "type": "array",
-            "description": "目标动作生效条件集合，必须属于该动作支持的条件白名单（仅 publish_course 允许包含 course_enrollment），越界条件返回 400 invalid_rule。",
+            "description": "动作资格条件包括内容准入、校园资格、手机号和独立实名。各动作支持全站规则与学校覆盖。",
             "uniqueItems": true,
             "maxItems": 5,
             "items": {
@@ -574,8 +572,7 @@
                 "content_access",
                 "campus_eligibility",
                 "phone_bound",
-                "identity_verified",
-                "course_enrollment"
+                "identity_verified"
               ]
             }
           },
@@ -617,7 +614,7 @@
       },
       "Action": {
         "type": "string",
-        "description": "动作目录。resources.purchase 与 membership.purchase 默认要求 campus_eligibility；登录由调用方已验证身份保证。仅 publish_course 支持 course_enrollment，其余 14 个动作支持 content_access、campus_eligibility、phone_bound、identity_verified。各动作独立支持全站规则与授权范围覆盖。",
+        "description": "动作资格条件包括内容准入、校园资格、手机号和独立实名。各动作支持全站规则与学校覆盖。",
         "enum": [
           "content.enter",
           "read_full",
@@ -642,8 +639,7 @@
           "content_access",
           "campus_eligibility",
           "phone_bound",
-          "identity_verified",
-          "course_enrollment"
+          "identity_verified"
         ]
       },
       "RuleSource": {

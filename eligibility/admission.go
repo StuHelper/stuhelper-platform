@@ -83,7 +83,6 @@ func (a Admission) Preview(ctx context.Context, subject, school string, actions 
 	}
 	loaded := make([]Rule, len(actions))
 	generalConditions := []Condition{}
-	needEnrollment := false
 	for i, action := range actions {
 		rule, err := rules.Effective(ctx, action, a.School)
 		if err != nil || Validate(rule) != nil {
@@ -91,9 +90,7 @@ func (a Admission) Preview(ctx context.Context, subject, school string, actions 
 		}
 		loaded[i] = rule
 		for _, cond := range rule.Conditions {
-			if cond == Enrollment {
-				needEnrollment = true
-			} else if !slices.Contains(generalConditions, cond) {
+			if !slices.Contains(generalConditions, cond) {
 				generalConditions = append(generalConditions, cond)
 			}
 		}
@@ -107,17 +104,6 @@ func (a Admission) Preview(ctx context.Context, subject, school string, actions 
 		if err == nil {
 			for k, v := range fetched {
 				combinedFacts[k] = v
-			}
-		}
-	}
-	if needEnrollment {
-		fetched, err := a.Facts.Facts(ctx, subject, a.School, []Condition{Enrollment})
-		if err != nil && ctx.Err() != nil {
-			return out, ErrUnavailable
-		}
-		if err == nil {
-			if v, ok := fetched[Enrollment]; ok {
-				combinedFacts[Enrollment] = v
 			}
 		}
 	}
