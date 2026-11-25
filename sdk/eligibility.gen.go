@@ -77,7 +77,6 @@ func (e Action) Valid() bool {
 const (
 	ChangeConditionsCampusEligibility ChangeConditions = "campus_eligibility"
 	ChangeConditionsContentAccess     ChangeConditions = "content_access"
-	ChangeConditionsCourseEnrollment  ChangeConditions = "course_enrollment"
 	ChangeConditionsIdentityVerified  ChangeConditions = "identity_verified"
 	ChangeConditionsPhoneBound        ChangeConditions = "phone_bound"
 )
@@ -88,8 +87,6 @@ func (e ChangeConditions) Valid() bool {
 	case ChangeConditionsCampusEligibility:
 		return true
 	case ChangeConditionsContentAccess:
-		return true
-	case ChangeConditionsCourseEnrollment:
 		return true
 	case ChangeConditionsIdentityVerified:
 		return true
@@ -104,7 +101,6 @@ func (e ChangeConditions) Valid() bool {
 const (
 	ConditionCampusEligibility Condition = "campus_eligibility"
 	ConditionContentAccess     Condition = "content_access"
-	ConditionCourseEnrollment  Condition = "course_enrollment"
 	ConditionIdentityVerified  Condition = "identity_verified"
 	ConditionPhoneBound        Condition = "phone_bound"
 )
@@ -115,8 +111,6 @@ func (e Condition) Valid() bool {
 	case ConditionCampusEligibility:
 		return true
 	case ConditionContentAccess:
-		return true
-	case ConditionCourseEnrollment:
 		return true
 	case ConditionIdentityVerified:
 		return true
@@ -164,7 +158,6 @@ func (e ErrorCode) Valid() bool {
 const (
 	RuleConditionsCampusEligibility RuleConditions = "campus_eligibility"
 	RuleConditionsContentAccess     RuleConditions = "content_access"
-	RuleConditionsCourseEnrollment  RuleConditions = "course_enrollment"
 	RuleConditionsIdentityVerified  RuleConditions = "identity_verified"
 	RuleConditionsPhoneBound        RuleConditions = "phone_bound"
 )
@@ -175,8 +168,6 @@ func (e RuleConditions) Valid() bool {
 	case RuleConditionsCampusEligibility:
 		return true
 	case RuleConditionsContentAccess:
-		return true
-	case RuleConditionsCourseEnrollment:
 		return true
 	case RuleConditionsIdentityVerified:
 		return true
@@ -191,7 +182,6 @@ func (e RuleConditions) Valid() bool {
 const (
 	RuleSupportedConditionsCampusEligibility RuleSupportedConditions = "campus_eligibility"
 	RuleSupportedConditionsContentAccess     RuleSupportedConditions = "content_access"
-	RuleSupportedConditionsCourseEnrollment  RuleSupportedConditions = "course_enrollment"
 	RuleSupportedConditionsIdentityVerified  RuleSupportedConditions = "identity_verified"
 	RuleSupportedConditionsPhoneBound        RuleSupportedConditions = "phone_bound"
 )
@@ -202,8 +192,6 @@ func (e RuleSupportedConditions) Valid() bool {
 	case RuleSupportedConditionsCampusEligibility:
 		return true
 	case RuleSupportedConditionsContentAccess:
-		return true
-	case RuleSupportedConditionsCourseEnrollment:
 		return true
 	case RuleSupportedConditionsIdentityVerified:
 		return true
@@ -235,12 +223,12 @@ func (e RuleSource) Valid() bool {
 	}
 }
 
-// Action 动作目录。resources.purchase 与 membership.purchase 默认要求 campus_eligibility；登录由调用方已验证身份保证。仅 publish_course 支持 course_enrollment，其余 14 个动作支持 content_access、campus_eligibility、phone_bound、identity_verified。各动作独立支持全站规则与授权范围覆盖。
+// Action 动作资格条件包括内容准入、校园资格、手机号和独立实名。各动作支持全站规则与学校覆盖。
 type Action string
 
 // Change defines model for Change.
 type Change struct {
-	// Conditions 目标动作生效条件集合，必须属于该动作支持的条件白名单（仅 publish_course 允许包含 course_enrollment），越界条件返回 400 invalid_rule。
+	// Conditions 动作资格条件包括内容准入、校园资格、手机号和独立实名。各动作支持全站规则与学校覆盖。
 	Conditions      []ChangeConditions `json:"conditions"`
 	ExpectedVersion string             `json:"expected_version"`
 
@@ -256,7 +244,7 @@ type Condition string
 
 // EligibilityEvaluation defines model for EligibilityEvaluation.
 type EligibilityEvaluation struct {
-	// Action 动作目录。resources.purchase 与 membership.purchase 默认要求 campus_eligibility；登录由调用方已验证身份保证。仅 publish_course 支持 course_enrollment，其余 14 个动作支持 content_access、campus_eligibility、phone_bound、identity_verified。各动作独立支持全站规则与授权范围覆盖。
+	// Action 动作资格条件包括内容准入、校园资格、手机号和独立实名。各动作支持全站规则与学校覆盖。
 	Action                Action      `json:"action"`
 	Allowed               bool        `json:"allowed"`
 	MissingConditions     []Condition `json:"missing_conditions"`
@@ -296,7 +284,7 @@ type Rule struct {
 	GlobalConditions *[]Condition     `json:"global_conditions,omitempty"`
 	Source           *RuleSource      `json:"source,omitempty"`
 
-	// SupportedConditions 当前动作允许配置的条件白名单。仅 publish_course 支持 course_enrollment，其余动作支持 content_access、campus_eligibility、phone_bound、identity_verified。
+	// SupportedConditions 动作资格条件包括内容准入、校园资格、手机号和独立实名。各动作支持全站规则与学校覆盖。
 	SupportedConditions *[]RuleSupportedConditions `json:"supported_conditions,omitempty"`
 	Version             string                     `json:"version"`
 }

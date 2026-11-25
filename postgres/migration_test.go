@@ -12,8 +12,8 @@ func TestIncrementalMigrationSkipsAppliedVersionsWithoutAuditTableLock(t *testin
 	repo, owner := setup(t)
 
 	var appliedCount int
-	if err := owner.QueryRow(`SELECT count(*) FROM platform.schema_migrations`).Scan(&appliedCount); err != nil || appliedCount != 6 {
-		t.Fatalf("expected 6 applied migrations, got %d (err=%v)", appliedCount, err)
+	if err := owner.QueryRow(`SELECT count(*) FROM platform.schema_migrations`).Scan(&appliedCount); err != nil || appliedCount != 7 {
+		t.Fatalf("expected 7 applied migrations, got %d (err=%v)", appliedCount, err)
 	}
 
 	// Hold an active ACCESS SHARE lock on platform.audit via a runtime read transaction.

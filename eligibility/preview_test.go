@@ -25,7 +25,7 @@ func (f *stubFacts) Facts(_ context.Context, _, _ string, conditions []e.Conditi
 	if f.failAll {
 		return nil, errors.New("verification service temporarily unreachable")
 	}
-	if f.rejectEnroll && slices.Contains(conditions, e.Enrollment) {
+	if f.rejectEnroll && slices.Contains(conditions, e.Condition("course_enrollment")) {
 		return nil, errors.New("no single course context in general preflight")
 	}
 	out := map[e.Condition]e.Fact{}
@@ -116,11 +116,11 @@ func TestEligibilityPreflightBatchAndDegradedFacts(t *testing.T) {
 	if byAction[sdk.ResourcesUpload].Allowed || !slices.Equal(byAction[sdk.ResourcesUpload].MissingConditions, []sdk.Condition{sdk.ConditionPhoneBound}) {
 		t.Fatalf("unexpected resources.upload evaluation: %+v", byAction[sdk.ResourcesUpload])
 	}
-	// publish_course isolates course_enrollment unavailability without hiding missing phone_bound!
+	// Publishing uses only general facts and shares a single provider call with the other actions.
 	if byAction[sdk.PublishCourse].Allowed ||
 		!slices.Equal(byAction[sdk.PublishCourse].SatisfiedConditions, []sdk.Condition{sdk.ConditionCampusEligibility}) ||
 		!slices.Equal(byAction[sdk.PublishCourse].MissingConditions, []sdk.Condition{sdk.ConditionPhoneBound}) ||
-		!slices.Equal(byAction[sdk.PublishCourse].UnavailableConditions, []sdk.Condition{sdk.ConditionCourseEnrollment}) {
+		len(byAction[sdk.PublishCourse].UnavailableConditions) != 0 || facts.calls != 1 {
 		t.Fatalf("unexpected publish_course evaluation: %+v", byAction[sdk.PublishCourse])
 	}
 	// reply_teacher requires phone_bound -> missing=["phone_bound"].
